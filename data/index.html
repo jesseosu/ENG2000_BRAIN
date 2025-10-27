@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Control Center</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 1.2em;
+        }
+        .module-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .module {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 25px;
+            text-decoration: none;
+            color: #333;
+            transition: all 0.3s ease;
+            display: block;
+        }
+        .module:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            border-color: #007bff;
+        }
+        .module-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+            display: block;
+        }
+        .module-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .module-description {
+            color: #666;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        .status {
+            margin-top: 30px;
+            padding: 15px;
+            background: #e8f5e8;
+            border-radius: 8px;
+            border-left: 4px solid #4caf50;
+        }
+        .status h3 {
+            margin: 0 0 10px 0;
+            color: #2e7d32;
+        }
+        .wifi-info {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #ff9800;
+        }
+        .wifi-info h3 {
+            margin: 0 0 10px 0;
+            color: #e65100;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 ESP32 Control Center</h1>
+        <p class="subtitle">Modular IoT Device Management System</p>
+
+        <div class="module-grid">
+            <a href="/ultrasonic" class="module">
+                <span class="module-icon">📏</span>
+                <div class="module-title">Ultrasonic Sensor</div>
+                <div class="module-description">
+                    Monitor distance measurements with real-time ultrasonic sensor data.
+                    Range: 2-400cm with high accuracy.
+                </div>
+            </a>
+
+            <a href="/motor" class="module">
+                <span class="module-icon">⚙️</span>
+                <div class="module-title">Motor Control</div>
+                <div class="module-description">
+                    Control DC motor with encoder feedback. Monitor speed, direction,
+                    and position in real-time.
+                </div>
+            </a>
+
+            <a href="/bridge" class="module">
+                <span class="module-icon">🌉</span>
+                <div class="module-title">Bridge Control</div>
+                <div class="module-description">
+                    Autonomous bridge control system with manual override.
+                    Monitor sensors and control bridge operation.
+                </div>
+            </a>
+
+            <a href="/config" class="module">
+                <span class="module-icon">🔧</span>
+                <div class="module-title">Configuration</div>
+                <div class="module-description">
+                    Configure device settings, network parameters,
+                    and sensor calibration options.
+                </div>
+            </a>
+
+            <a href="/system" class="module">
+                <span class="module-icon"></span>
+                <div class="module-title">System Info</div>
+                <div class="module-description">
+                    View system status, WiFi connections, memory usage,
+                    and device diagnostics.
+                </div>
+            </a>
+        </div>
+
+        <div class="status">
+            <h3>✅ System Status</h3>
+            <p>ESP32 Web Server is running | WiFi AP Active | All modules loaded</p>
+        </div>
+
+        <div class="wifi-info">
+            <h3>📡 Network Information</h3>
+            <p><strong>SSID:</strong> ESP32-Control | <strong>IP:</strong> 192.168.4.1</p>
+            <p><strong>Password:</strong> password123</p>
+        </div>
+    </div>
+
+    <script>
+        // Simple status check
+        setInterval(() => {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.uptime) {
+                        document.querySelector('.status p').textContent =
+                            `ESP32 Active | Uptime: ${data.uptime}s | WiFi: ${data.wifi_clients} clients`;
+                    }
+                })
+                .catch(() => {
+                    document.querySelector('.status p').textContent =
+                        'ESP32 Web Server is running | WiFi AP Active | All modules loaded';
+                });
+        }, 5000);
+    </script>
+</body>
+</html>

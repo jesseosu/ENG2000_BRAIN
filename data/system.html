@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 System Info</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 50px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .nav {
+            margin-bottom: 20px;
+        }
+        .nav a {
+            color: #2196F3;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .nav a:hover {
+            text-decoration: underline;
+        }
+        h1 {
+            color: #333;
+        }
+        .info {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            text-align: left;
+        }
+        .info h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #e8f4fd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav">
+            <a href="/">← Back to Control Center</a>
+        </div>
+
+        <h1>ESP32 System Info</h1>
+
+        <div id="status" class="status">Loading system information...</div>
+
+        <div class="info">
+            <h3>System Information</h3>
+            <p>This page displays system status and diagnostics.</p>
+            <p>Information will be loaded dynamically.</p>
+        </div>
+    </div>
+
+    <script>
+        // Load system info
+        fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('status').innerHTML = `
+                        <strong>Uptime:</strong> ${data.uptime}s<br>
+                        <strong>WiFi Clients:</strong> ${data.wifi_clients}<br>
+                        <strong>Version:</strong> ${data.version}
+                    `;
+                } else {
+                    document.getElementById('status').textContent = 'Failed to load system info';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching system info:', error);
+                document.getElementById('status').textContent = 'Error loading system information';
+            });
+    </script>
+</body>
+</html>

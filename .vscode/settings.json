@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "*.ejs": "html",
+        "stdio.h": "c",
+        "adc_cali.h": "c",
+        "ledc.h": "c"
+    }
+}

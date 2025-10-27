@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pin Configuration - ESP32 Web Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .pin-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        
+        .pin-section h2 {
+            color: #2c3e50;
+            margin-top: 0;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .pin-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .pin-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            background-color: white;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        
+        .pin-label {
+            font-weight: bold;
+            color: #34495e;
+            flex: 1;
+        }
+        
+        .pin-select {
+            padding: 8px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            background-color: white;
+            font-size: 14px;
+            min-width: 100px;
+        }
+        
+        .pin-select:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+        }
+        
+        .pin-conflict {
+            border-color: #e74c3c !important;
+            background-color: #fdf2f2;
+        }
+        
+        .pin-warning {
+            border-color: #f39c12 !important;
+            background-color: #fef9e7;
+        }
+        
+        .actions {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #ecf0f1;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            margin: 0 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #2980b9;
+        }
+        
+        .btn-secondary {
+            background-color: #95a5a6;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #7f8c8d;
+        }
+        
+        .btn-danger {
+            background-color: #e74c3c;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background-color: #c0392b;
+        }
+        
+        .status-message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            display: none;
+        }
+        
+        .status-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .pin-info {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #e8f4fd;
+            border-left: 4px solid #3498db;
+            border-radius: 0 4px 4px 0;
+        }
+        
+        .pin-info ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .pin-info li {
+            margin: 5px 0;
+        }
+        
+        .nav-links {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .nav-links a {
+            margin: 0 15px;
+            color: #3498db;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Pin Configuration</h1>
+        
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/motor.html">Motor Control</a>
+            <a href="/ultrasonic.html">Ultrasonic Sensor</a>
+            <a href="/bridge.html">Bridge Control</a>
+        </div>
+        
+        <form id="pinConfigForm">
+            <!-- System Pins Section -->
+            <div class="pin-section">
+                <h2>🔌 System Pins</h2>
+                <div class="pin-grid">
+                    <div class="pin-item">
+                        <label class="pin-label">Status LED:</label>
+                        <select class="pin-select" name="led_pin" id="led_pin">
+                            <!-- Options populated by JavaScript -->
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Ultrasonic Trigger:</label>
+                        <select class="pin-select" name="ultrasonic_trig_pin" id="ultrasonic_trig_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Ultrasonic Echo:</label>
+                        <select class="pin-select" name="ultrasonic_echo_pin" id="ultrasonic_echo_pin">
+                        </select>
+                    </div>
+                </div>
+                <div class="pin-info">
+                    <strong>System Pins Info:</strong>
+                    <ul>
+                        <li><strong>Status LED:</strong> Main status indicator LED</li>
+                        <li><strong>Ultrasonic Trigger:</strong> HC-SR04 trigger pin (output)</li>
+                        <li><strong>Ultrasonic Echo:</strong> HC-SR04 echo pin (input)</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Motor Control Section -->
+            <div class="pin-section">
+                <h2>🏎️ Motor Control Pins</h2>
+                <div class="pin-grid">
+                    <div class="pin-item">
+                        <label class="pin-label">Motor Encoder A:</label>
+                        <select class="pin-select" name="motor_enca_pin" id="motor_enca_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Motor Encoder B:</label>
+                        <select class="pin-select" name="motor_encb_pin" id="motor_encb_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Motor Direction 1 (IN1):</label>
+                        <select class="pin-select" name="motor_in1_pin" id="motor_in1_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Motor Direction 2 (IN2):</label>
+                        <select class="pin-select" name="motor_in2_pin" id="motor_in2_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Motor PWM Enable (ENA):</label>
+                        <select class="pin-select" name="motor_ena_pin" id="motor_ena_pin">
+                        </select>
+                    </div>
+                </div>
+                <div class="pin-info">
+                    <strong>Motor Control Info:</strong>
+                    <ul>
+                        <li><strong>Encoder A/B:</strong> Quadrature encoder pins for position feedback</li>
+                        <li><strong>IN1/IN2:</strong> L298N motor driver direction control pins</li>
+                        <li><strong>ENA:</strong> PWM speed control pin for L298N driver</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Bridge Control Section -->
+            <div class="pin-section">
+                <h2>🌉 Bridge Control Pins</h2>
+                <div class="pin-grid">
+                    <div class="pin-item">
+                        <label class="pin-label">Bridge Servo:</label>
+                        <select class="pin-select" name="bridge_servo_pin" id="bridge_servo_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Boat Sensor Trigger:</label>
+                        <select class="pin-select" name="bridge_boat_trig_pin" id="bridge_boat_trig_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Boat Sensor Echo:</label>
+                        <select class="pin-select" name="bridge_boat_echo_pin" id="bridge_boat_echo_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Car Sensor Trigger:</label>
+                        <select class="pin-select" name="bridge_car_trig_pin" id="bridge_car_trig_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Car Sensor Echo:</label>
+                        <select class="pin-select" name="bridge_car_echo_pin" id="bridge_car_echo_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Lowered Limit Switch:</label>
+                        <select class="pin-select" name="bridge_sw_lowered_pin" id="bridge_sw_lowered_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Raised Limit Switch:</label>
+                        <select class="pin-select" name="bridge_sw_raised_pin" id="bridge_sw_raised_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Status LED Red:</label>
+                        <select class="pin-select" name="bridge_led_r_pin" id="bridge_led_r_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Status LED Green:</label>
+                        <select class="pin-select" name="bridge_led_g_pin" id="bridge_led_g_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Status LED Blue:</label>
+                        <select class="pin-select" name="bridge_led_b_pin" id="bridge_led_b_pin">
+                        </select>
+                    </div>
+                </div>
+                <div class="pin-info">
+                    <strong>Bridge Control Info:</strong>
+                    <ul>
+                        <li><strong>Servo:</strong> Bridge lift servo motor control (PWM)</li>
+                        <li><strong>Boat/Car Sensors:</strong> HC-SR04 ultrasonic sensors for presence detection</li>
+                        <li><strong>Limit Switches:</strong> Mechanical switches for bridge position detection</li>
+                        <li><strong>RGB LED:</strong> Bridge status indication (red, green, blue channels)</li>
+                    </ul>
+                </div>
+            </div>
+        </form>
+        
+        <div class="actions">
+            <button type="button" class="btn btn-secondary" onclick="loadCurrentConfig()">🔄 Refresh</button>
+            <button type="button" class="btn btn-primary" onclick="saveConfiguration()">💾 Save Configuration</button>
+            <button type="button" class="btn btn-secondary" onclick="resetToDefaults()">🔧 Reset to Defaults</button>
+            <button type="button" class="btn btn-danger" onclick="if(confirm('Restart ESP32? This will apply new pin configuration.')) restartESP32()">🔄 Restart ESP32</button>
+        </div>
+        
+        <div id="statusMessage" class="status-message"></div>
+    </div>
+
+    <script>
+        // ESP32 GPIO pins (excluding reserved pins)
+        const availablePins = [
+            0, 2, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33, 34, 35, 36, 39
+        ];
+        
+        // Pin restrictions and notes
+        const pinNotes = {
+            0: "Boot mode pin (pulled up)",
+            2: "Onboard LED on some boards",
+            34: "Input only",
+            35: "Input only", 
+            36: "Input only (SVP)",
+            39: "Input only (SVN)"
+        };
+        
+        let currentConfig = {};
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            populatePinSelectors();
+            loadCurrentConfig();
+            
+            // Add change listeners for conflict detection
+            document.querySelectorAll('.pin-select').forEach(select => {
+                select.addEventListener('change', checkForConflicts);
+            });
+        });
+        
+        function populatePinSelectors() {
+            const selectors = document.querySelectorAll('.pin-select');
+            
+            selectors.forEach(select => {
+                select.innerHTML = '<option value="">Select GPIO...</option>';
+                
+                availablePins.forEach(pin => {
+                    const option = document.createElement('option');
+                    option.value = pin;
+                    option.textContent = `GPIO ${pin}`;
+                    if (pinNotes[pin]) {
+                        option.textContent += ` (${pinNotes[pin]})`;
+                    }
+                    select.appendChild(option);
+                });
+            });
+        }
+        
+        async function loadCurrentConfig() {
+            try {
+                showMessage('Loading current configuration...', 'warning');
+                const response = await fetch('/api/pin-config');
+                
+                if (response.ok) {
+                    currentConfig = await response.json();
+                    
+                    // Populate form with current values
+                    Object.entries(currentConfig).forEach(([pinName, pinValue]) => {
+                        const select = document.getElementById(pinName);
+                        if (select) {
+                            select.value = pinValue;
+                        }
+                    });
+                    
+                    checkForConflicts();
+                    showMessage('Configuration loaded successfully!', 'success');
+                } else {
+                    throw new Error('Failed to load configuration');
+                }
+            } catch (error) {
+                showMessage('Error loading configuration: ' + error.message, 'error');
+            }
+        }
+        
+        function checkForConflicts() {
+            const selectors = document.querySelectorAll('.pin-select');
+            const usedPins = new Map();
+            const conflicts = new Set();
+            
+            // Clear previous conflict styling
+            selectors.forEach(select => {
+                select.classList.remove('pin-conflict', 'pin-warning');
+            });
+            
+            // Check for duplicate pin assignments
+            selectors.forEach(select => {
+                if (select.value) {
+                    const pin = parseInt(select.value);
+                    if (usedPins.has(pin)) {
+                        // Mark both selectors as conflicts
+                        conflicts.add(select);
+                        conflicts.add(usedPins.get(pin));
+                    } else {
+                        usedPins.set(pin, select);
+                    }
+                    
+                    // Check for input-only pins used as outputs
+                    if ([34, 35, 36, 39].includes(pin)) {
+                        const isOutput = select.name.includes('trig') || 
+                                        select.name.includes('led') || 
+                                        select.name.includes('servo') ||
+                                        select.name.includes('dir') ||
+                                        select.name.includes('ena');
+                        if (isOutput) {
+                            select.classList.add('pin-warning');
+                        }
+                    }
+                }
+            });
+            
+            // Apply conflict styling
+            conflicts.forEach(select => {
+                select.classList.add('pin-conflict');
+            });
+            
+            return conflicts.size === 0;
+        }
+        
+        async function saveConfiguration() {
+            if (!checkForConflicts()) {
+                showMessage('Cannot save: Pin conflicts detected! Please resolve conflicts first.', 'error');
+                return;
+            }
+            
+            try {
+                showMessage('Saving configuration...', 'warning');
+                
+                // Collect all pin values
+                const config = {};
+                document.querySelectorAll('.pin-select').forEach(select => {
+                    if (select.value) {
+                        config[select.name] = parseInt(select.value);
+                    }
+                });
+                
+                const response = await fetch('/api/pin-config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                if (response.ok) {
+                    currentConfig = config;
+                    showMessage('Configuration saved successfully! Restart ESP32 to apply changes.', 'success');
+                } else {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+            } catch (error) {
+                showMessage('Error saving configuration: ' + error.message, 'error');
+            }
+        }
+        
+        async function resetToDefaults() {
+            if (!confirm('Reset all pins to default values? This will overwrite current configuration.')) {
+                return;
+            }
+            
+            try {
+                showMessage('Resetting to defaults...', 'warning');
+                
+                const response = await fetch('/api/pin-config/reset', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    await loadCurrentConfig();
+                    showMessage('Configuration reset to defaults!', 'success');
+                } else {
+                    throw new Error('Failed to reset configuration');
+                }
+            } catch (error) {
+                showMessage('Error resetting configuration: ' + error.message, 'error');
+            }
+        }
+        
+        async function restartESP32() {
+            try {
+                showMessage('Restarting ESP32...', 'warning');
+                
+                const response = await fetch('/api/restart', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    showMessage('ESP32 is restarting... Page will reload in 10 seconds.', 'success');
+                    
+                    // Reload page after restart
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 10000);
+                } else {
+                    throw new Error('Failed to restart ESP32');
+                }
+            } catch (error) {
+                showMessage('Error restarting ESP32: ' + error.message, 'error');
+            }
+        }
+        
+        function showMessage(message, type) {
+            const messageDiv = document.getElementById('statusMessage');
+            messageDiv.textContent = message;
+            messageDiv.className = `status-message status-${type}`;
+            messageDiv.style.display = 'block';
+            
+            // Auto-hide success messages after 5 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>

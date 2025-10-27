@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bridge Control - ESP32</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .status-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .status-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 16px;
+        }
+        .status-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .control-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-warning { background-color: #ffc107; color: black; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .btn-secondary { background-color: #6c757d; color: white; }
+        
+        button:hover {
+            opacity: 0.8;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .nav-links {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .nav-links a {
+            margin: 0 10px;
+            text-decoration: none;
+            color: #007bff;
+            padding: 5px 10px;
+            border-radius: 3px;
+            border: 1px solid #007bff;
+        }
+        .nav-links a:hover {
+            background-color: #007bff;
+            color: white;
+        }
+        .alert {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .alert-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .alert-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .chart-container {
+            margin: 20px 0;
+            height: 400px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 20px;
+            background-color: #007bff;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+        }
+        .calibration-info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+        }
+        .hidden { display: none; }
+        .speed-control {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 15px 0;
+            gap: 10px;
+        }
+        .speed-control input {
+            width: 100px;
+            padding: 10px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+        }
+        .speed-control label {
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌉 Bridge Control</h1>
+        
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/motor">Motor</a>
+            <a href="/config">Config</a>
+            <a href="/system">System</a>
+        </div>
+
+        <div class="status-grid">
+            <div class="status-card">
+                <h3>Bridge State</h3>
+                <div class="status-value" id="bridgeState">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Manual Override</h3>
+                <div class="status-value" id="manualOverride">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Car on Bridge</h3>
+                <div class="status-value" id="carOnBridge">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Boat Present</h3>
+                <div class="status-value" id="boatPresent">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Lower Switch</h3>
+                <div class="status-value" id="switchLowered">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Raised Switch</h3>
+                <div class="status-value" id="switchRaised">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Car Distance</h3>
+                <div class="status-value" id="carDistance">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Boat Distance</h3>
+                <div class="status-value" id="boatDistance">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Hall Lowered Raw</h3>
+                <div class="status-value" id="hallLoweredRaw">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Hall Raised Raw</h3>
+                <div class="status-value" id="hallRaisedRaw">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>ADC Lowered Raw</h3>
+                <div class="status-value" id="adcLoweredRaw">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>ADC Raised Raw</h3>
+                <div class="status-value" id="adcRaisedRaw">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Calibration State</h3>
+                <div class="status-value" id="calibrationState">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Boat Detected (Cal)</h3>
+                <div class="status-value" id="boatDetectedCal">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Baseline Mean</h3>
+                <div class="status-value" id="baselineMean">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Detection Delta</h3>
+                <div class="status-value" id="detectionDelta">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Car Calibration State</h3>
+                <div class="status-value" id="carCalibrationState">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Car Detected (Cal)</h3>
+                <div class="status-value" id="carDetectedCal">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Car Baseline Mean</h3>
+                <div class="status-value" id="carBaselineMean">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Car Detection Delta</h3>
+                <div class="status-value" id="carDetectionDelta">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Red LED</h3>
+                <div class="status-value" id="redLED">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Green LED</h3>
+                <div class="status-value" id="greenLED">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Blue LED</h3>
+                <div class="status-value" id="blueLED">Loading...</div>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h3>🎯 Boat Sensor Calibration</h3>
+            <div class="calibration-info" id="calibrationInfo">
+                <p><strong>Calibration Process:</strong></p>
+                <ul>
+                    <li>Keep the water area completely clear of boats during calibration</li>
+                    <li>This calibrates the boat detection ultrasonic sensor</li>
+                    <li>Calibration takes 50 samples to establish baseline readings</li>
+                    <li>Once complete, boat detection will use baseline-relative thresholds</li>
+                    <li>Detection requires 3 consecutive readings for robustness</li>
+                </ul>
+            </div>
+            
+            <div id="calibrationProgress" class="hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill">0%</div>
+                </div>
+                <p id="progressText">Collecting samples...</p>
+            </div>
+            
+            <div id="calibrationResults" class="hidden">
+                <p><strong>Calibration Results:</strong></p>
+                <p>Baseline Mean: <span id="resultMean">-</span> cm</p>
+                <p>Standard Deviation: <span id="resultStddev">-</span> cm</p>
+                <p>Detection Threshold: <span id="resultThreshold">-</span> cm closer than baseline</p>
+            </div>
+            
+            <div class="button-group">
+                <button id="startCalibration" class="btn-warning" onclick="startCalibration()">Start Calibration</button>
+                <button id="resetCalibration" class="btn-secondary" onclick="resetCalibration()">Reset</button>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h3>📊 Live Boat Sensor Data</h3>
+            <div class="chart-container">
+                <canvas id="sensorChart" width="800" height="300"></canvas>
+            </div>
+            <div class="button-group">
+                <button id="toggleChart" class="btn-primary" onclick="toggleChart()">Start Live Chart</button>
+                <button id="clearChart" class="btn-secondary" onclick="clearChart()">Clear Data</button>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h3>🚗 Car Sensor Calibration</h3>
+            <div class="calibration-info" id="carCalibrationInfo">
+                <p><strong>Calibration Process:</strong></p>
+                <ul>
+                    <li>Keep the bridge area completely clear of cars during calibration</li>
+                    <li>This calibrates the car detection ultrasonic sensor</li>
+                    <li>Calibration takes 50 samples to establish baseline readings</li>
+                    <li>Once complete, car detection will use baseline-relative thresholds</li>
+                    <li>Detection requires 3 consecutive readings for robustness</li>
+                </ul>
+            </div>
+            
+            <div id="carCalibrationProgress" class="hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="carProgressFill">0%</div>
+                </div>
+                <p id="carProgressText">Collecting samples...</p>
+            </div>
+            
+            <div id="carCalibrationResults" class="hidden">
+                <p><strong>Calibration Results:</strong></p>
+                <p>Baseline Mean: <span id="carResultMean">-</span> cm</p>
+                <p>Standard Deviation: <span id="carResultStddev">-</span> cm</p>
+                <p>Detection Threshold: <span id="carResultThreshold">-</span> cm closer than baseline</p>
+            </div>
+            
+            <div class="button-group">
+                <button id="startCarCalibration" class="btn-warning" onclick="startCarCalibration()">Start Calibration</button>
+                <button id="resetCarCalibration" class="btn-secondary" onclick="resetCarCalibration()">Reset</button>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h3>📊 Live Car Sensor Data</h3>
+            <div class="chart-container">
+                <canvas id="carSensorChart" width="800" height="300"></canvas>
+            </div>
+            <div class="button-group">
+                <button id="toggleCarChart" class="btn-primary" onclick="toggleCarChart()">Start Live Chart</button>
+                <button id="clearCarChart" class="btn-secondary" onclick="clearCarChart()">Clear Data</button>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h3>Override Control</h3>
+            <div id="overrideAlert" class="alert alert-warning" style="display: none;">
+                Manual override is enabled. Bridge autonomous operation is disabled.
+            </div>
+            <div class="button-group">
+                <button id="enableOverride" class="btn-warning" onclick="toggleOverride(true)">Enable Override</button>
+                <button id="disableOverride" class="btn-success" onclick="toggleOverride(false)">Disable Override</button>
+            </div>
+            <div style="margin-top:10px;">
+                <label style="font-weight:bold;display:block;margin-bottom:6px;">Car detection system</label>
+                <div class="button-group">
+                    <button id="enableCarDetect" class="btn-primary" onclick="toggleCarDetection(true)">Enable Car Detection</button>
+                    <button id="disableCarDetect" class="btn-secondary" onclick="toggleCarDetection(false)">Disable Car Detection</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h3>Manual Bridge Control</h3>
+            <div id="manualAlert" class="alert alert-danger" style="display: none;">
+                Manual override must be enabled to use these controls.
+            </div>
+            <div class="speed-control">
+                <label for="motorSpeedInput">Motor Speed:</label>
+                <input type="number" id="motorSpeedInput" value="50" min="0" max="100" step="5" disabled>
+                <span>%</span>
+                <button id="setSpeed" class="btn-primary" onclick="setMotorSpeed()" disabled>Set Speed</button>
+            </div>
+            <div class="button-group">
+                <button id="bridgeUp" class="btn-primary" onclick="controlBridge('up')" disabled>Raise Bridge</button>
+                <button id="bridgeDown" class="btn-primary" onclick="controlBridge('down')" disabled>Lower Bridge</button>
+                <button id="bridgeStop" class="btn-secondary" onclick="controlBridge('stop')" disabled>Stop Bridge</button>
+                <button id="bridgeReset" class="btn-danger" onclick="controlBridge('reset')" disabled>Reset to Auto</button>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h3>🔧 Hall Effect Sensor Threshold</h3>
+            <div class="calibration-info">
+                <p><strong>About Hall Effect Threshold:</strong></p>
+                <ul>
+                    <li>This threshold determines when the hall effect sensors detect the magnet</li>
+                    <li>The sensor is triggered when the reading is <strong>below</strong> the threshold</li>
+                    <li>Valid range: 0-4095 (ADC raw value)</li>
+                    <li>Default: 1650 (approximately half of 3.3V)</li>
+                    <li>Check the "Hall Lowered Raw" and "Hall Raised Raw" values above to calibrate</li>
+                </ul>
+            </div>
+            <div class="speed-control">
+                <label for="hallThresholdInput">Threshold:</label>
+                <input type="number" id="hallThresholdInput" value="1650" min="0" max="4095" step="50">
+                <button id="setThreshold" class="btn-primary" onclick="setHallThreshold()">Set Threshold</button>
+                <button id="refreshThreshold" class="btn-secondary" onclick="getHallThreshold()">Refresh</button>
+            </div>
+            <div id="thresholdStatus" class="calibration-info hidden">
+                <p id="thresholdMessage"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include Chart.js for live graphing -->
+    <script src="chart.min.js"></script>
+    <script>
+        let bridgeStatus = {};
+        let calibrationStatus = {};
+        let carCalibrationStatus = {};
+        let chartingActive = false;
+        let carChartingActive = false;
+        let sensorChart = null;
+        let carSensorChart = null;
+        let eventSource = null;
+        let chartData = {
+            labels: [],
+            datasets: [{
+                label: 'Distance (cm)',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                tension: 0.1
+            }, {
+                label: 'Baseline',
+                data: [],
+                borderColor: 'rgb(255, 99, 132)',
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                borderDash: [5, 5],
+                pointRadius: 0
+            }, {
+                label: 'Detection Threshold',
+                data: [],
+                borderColor: 'rgb(255, 159, 64)',
+                backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                borderDash: [10, 5],
+                pointRadius: 0
+            }]
+        };
+        
+        let carChartData = {
+            labels: [],
+            datasets: [{
+                label: 'Distance (cm)',
+                data: [],
+                borderColor: 'rgb(255, 99, 132)',
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                tension: 0.1
+            }, {
+                label: 'Baseline',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderDash: [5, 5],
+                pointRadius: 0
+            }, {
+                label: 'Detection Threshold',
+                data: [],
+                borderColor: 'rgb(255, 159, 64)',
+                backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                borderDash: [10, 5],
+                pointRadius: 0
+            }]
+        };
+
+        function initChart() {
+            try {
+                const ctx = document.getElementById('sensorChart').getContext('2d');
+                sensorChart = new Chart(ctx, {
+                    type: 'line',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Time (seconds ago)'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Distance (cm)'
+                                },
+                                min: 0,
+                                max: 300, // Default max, will be adjusted dynamically
+                                beginAtZero: true
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true
+                            },
+                            title: {
+                                display: true,
+                                text: 'Boat Sensor Readings'
+                            }
+                        }
+                    }
+                });
+                console.log('Chart.js not loaded');
+            } catch (error) {
+                console.error('Error initializing chart:', error);
+                document.getElementById('sensorChart').style.display = 'none';
+            }
+        }
+        
+        function initCarChart() {
+            try {
+                const ctx = document.getElementById('carSensorChart').getContext('2d');
+                carSensorChart = new Chart(ctx, {
+                    type: 'line',
+                    data: carChartData,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Time (seconds ago)'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Distance (cm)'
+                                },
+                                min: 0,
+                                max: 300,
+                                beginAtZero: true
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true
+                            },
+                            title: {
+                                display: true,
+                                text: 'Car Sensor Readings'
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error initializing car chart:', error);
+                document.getElementById('carSensorChart').style.display = 'none';
+            }
+        }
+
+        function updateChartScale(data) {
+            if (!sensorChart || !data.calibrated) return;
+            
+            // Adaptive scaling based on baseline and threshold
+            const baseline = data.baseline_mean || 200;
+            const threshold = data.threshold_distance || baseline - 8;
+            
+            // Set chart range to show baseline +/- 50% with some padding
+            const range = Math.max(50, baseline * 0.5);
+            const minY = Math.max(0, threshold - range * 0.3);
+            const maxY = baseline + range * 0.7;
+            
+            // Update chart scale
+            sensorChart.options.scales.y.min = minY;
+            sensorChart.options.scales.y.max = maxY;
+        }
+        
+        function updateCarChartScale(data) {
+            if (!carSensorChart || !data.calibrated) return;
+            
+            // Adaptive scaling based on baseline and threshold
+            const baseline = data.baseline_mean || 200;
+            const threshold = data.threshold_distance || baseline - 8;
+            
+            // Set chart range to show baseline +/- 50% with some padding
+            const range = Math.max(50, baseline * 0.5);
+            const minY = Math.max(0, threshold - range * 0.3);
+            const maxY = baseline + range * 0.7;
+            
+            // Update chart scale
+            carSensorChart.options.scales.y.min = minY;
+            carSensorChart.options.scales.y.max = maxY;
+        }
+
+        // Initialize Server-Sent Events connection
+        function initSSE() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource('/api/events');
+            
+            eventSource.onopen = function() {
+
+            };
+            
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('SSE data received:', data);
+                    
+                    // Update bridge status from SSE data
+                    bridgeStatus = data;
+                    document.getElementById('bridgeState').textContent = data.state || 'Unknown';
+                    document.getElementById('boatPresent').textContent = data.boat_present ? 'YES' : 'NO';
+                    document.getElementById('boatDistance').textContent = data.boat_distance ? data.boat_distance.toFixed(1) + ' cm' : 'N/A';
+                    
+                    // Update calibration info
+                    if (data.calibrated) {
+                        document.getElementById('calibrationState').textContent = 'complete';
+                        document.getElementById('baselineMean').textContent = data.baseline_mean ? data.baseline_mean.toFixed(1) + ' cm' : 'N/A';
+                        document.getElementById('boatDetectedCal').textContent = data.boat_detected ? 'YES' : 'NO';
+                        
+                        if (data.baseline_mean !== undefined && data.boat_distance !== undefined) {
+                            const delta = data.baseline_mean - data.boat_distance;
+                            document.getElementById('detectionDelta').textContent = delta.toFixed(1) + ' cm';
+                        }
+                    } else if (data.calib_progress !== undefined) {
+                        document.getElementById('calibrationState').textContent = 'in_progress';
+                        updateCalibrationProgress(data.calib_progress, data.calib_total);
+                    } else {
+                        document.getElementById('calibrationState').textContent = 'idle';
+                    }
+                    
+                    // Update chart with adaptive scaling
+                    if (chartingActive) {
+                        updateChart(data);
+                    }
+                    
+                } catch (error) {
+                    console.error('Error parsing SSE data:', error);
+                }
+            };
+            
+            eventSource.onerror = function(error) {
+                console.error('SSE error:', error);
+                // Reconnect after 5 seconds
+                setTimeout(initSSE, 5000);
+            };
+        }
+
+        // Update chart with new data point
+        function updateChart(data) {
+            if (!sensorChart) return;
+            
+            const now = Date.now() / 1000;
+            const timeAgo = 0; // Most recent point
+            
+            // Add new data point
+            chartData.labels.push(timeAgo.toFixed(1));
+            chartData.datasets[0].data.push(data.current_distance);
+            
+            if (data.calibrated && data.baseline_mean !== undefined) {
+                chartData.datasets[1].data.push(data.baseline_mean);
+                chartData.datasets[2].data.push(data.threshold_distance);
+                
+                // Update chart scale
+                updateChartScale(data.baseline_mean, data.threshold_distance, data.current_distance);
+            } else {
+                chartData.datasets[1].data.push(null);
+                chartData.datasets[2].data.push(null);
+            }
+            
+            // Keep only last 50 points
+            const maxPoints = 50;
+            if (chartData.labels.length > maxPoints) {
+                chartData.labels.shift();
+                chartData.datasets[0].data.shift();
+                chartData.datasets[1].data.shift();
+                chartData.datasets[2].data.shift();
+            }
+            
+            // Update time labels to show "seconds ago"
+            for (let i = 0; i < chartData.labels.length; i++) {
+                chartData.labels[i] = (chartData.labels.length - 1 - i).toString();
+            }
+            
+            sensorChart.update('none');
+        }
+
+        function updateStatus() {
+
+            fetch('/api/bridge/status')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    bridgeStatus = data;
+                    document.getElementById('bridgeState').textContent = data.state || 'Unknown';
+                    document.getElementById('manualOverride').textContent = data.manual_override ? 'ENABLED' : 'DISABLED';
+                    document.getElementById('carOnBridge').textContent = data.car_on_bridge ? 'YES' : 'NO';
+                    document.getElementById('boatPresent').textContent = data.boat_present ? 'YES' : 'NO';
+                    document.getElementById('switchLowered').textContent = data.switch_lowered ? 'TRIGGERED' : 'OPEN';
+                    document.getElementById('switchRaised').textContent = data.switch_raised ? 'TRIGGERED' : 'OPEN';
+                    document.getElementById('carDistance').textContent = data.car_distance ? data.car_distance.toFixed(1) + ' cm' : 'N/A';
+                    document.getElementById('boatDistance').textContent = data.boat_distance ? data.boat_distance.toFixed(1) + ' cm' : 'N/A';
+                    document.getElementById('hallLoweredRaw').textContent = data.hall_lowered_raw !== undefined ? data.hall_lowered_raw + ' mV' : 'N/A';
+                    document.getElementById('hallRaisedRaw').textContent = data.hall_raised_raw !== undefined ? data.hall_raised_raw + ' mV' : 'N/A';
+                    document.getElementById('adcLoweredRaw').textContent = data.hall_lowered_adc_raw !== undefined ? data.hall_lowered_adc_raw : 'N/A';
+                    document.getElementById('adcRaisedRaw').textContent = data.hall_raised_adc_raw !== undefined ? data.hall_raised_adc_raw : 'N/A';
+                    
+                    // Update hall threshold input if it exists
+                    if (data.hall_threshold !== undefined) {
+                        document.getElementById('hallThresholdInput').value = data.hall_threshold;
+                    }
+                    
+                    // Update boat calibration status
+                    document.getElementById('calibrationState').textContent = data.calibration_state || 'idle';
+                    document.getElementById('boatDetectedCal').textContent = data.boat_detected_calibrated ? 'YES' : 'NO';
+                    document.getElementById('baselineMean').textContent = data.baseline_mean ? data.baseline_mean.toFixed(1) + ' cm' : 'N/A';
+                    
+                    if (data.calibrated && data.baseline_mean !== undefined) {
+                        const currentDist = data.boat_distance || 0;
+                        const delta = data.baseline_mean - currentDist;
+                        document.getElementById('detectionDelta').textContent = delta.toFixed(1) + ' cm';
+                    } else {
+                        document.getElementById('detectionDelta').textContent = 'N/A';
+                    }
+                    
+                    // Update car calibration status
+                    document.getElementById('carCalibrationState').textContent = data.car_calibration_state || 'idle';
+                    document.getElementById('carDetectedCal').textContent = data.car_detected_calibrated ? 'YES' : 'NO';
+                    document.getElementById('carBaselineMean').textContent = data.car_baseline_mean ? data.car_baseline_mean.toFixed(1) + ' cm' : 'N/A';
+                    
+                    if (data.car_calibrated && data.car_baseline_mean !== undefined) {
+                        const currentDist = data.car_distance || 0;
+                        const delta = data.car_baseline_mean - currentDist;
+                        document.getElementById('carDetectionDelta').textContent = delta.toFixed(1) + ' cm';
+                    } else {
+                        document.getElementById('carDetectionDelta').textContent = 'N/A';
+                    }
+                    
+                    // Update LED states
+                    document.getElementById('redLED').textContent = data.led_r ? 'ON' : 'OFF';
+                    document.getElementById('greenLED').textContent = data.led_g ? 'ON' : 'OFF';
+                    document.getElementById('blueLED').textContent = data.led_b ? 'ON' : 'OFF';
+                    // Update car detection buttons
+                    if (typeof data.car_detection_enabled !== 'undefined') {
+                        document.getElementById('enableCarDetect').disabled = data.car_detection_enabled;
+                        document.getElementById('disableCarDetect').disabled = !data.car_detection_enabled;
+                    }
+                    
+                    updateControlsState();
+                })
+                .catch(error => {
+                    console.error('Error fetching bridge status:', error);
+                    // Show error in status cards
+                    document.getElementById('bridgeState').textContent = 'Error';
+                    document.getElementById('manualOverride').textContent = 'Error';
+                });
+        }
+
+        function updateCalibrationProgress(samplesCollected, totalSamples) {
+            const progressDiv = document.getElementById('calibrationProgress');
+            const resultsDiv = document.getElementById('calibrationResults');
+            const startBtn = document.getElementById('startCalibration');
+            
+            progressDiv.classList.remove('hidden');
+            resultsDiv.classList.add('hidden');
+            startBtn.disabled = true;
+            
+            const progress = (samplesCollected / totalSamples) * 100;
+            document.getElementById('progressFill').style.width = progress + '%';
+            document.getElementById('progressFill').textContent = Math.round(progress) + '%';
+            document.getElementById('progressText').textContent = 
+                `Collecting samples: ${samplesCollected}/${totalSamples}`;
+        }
+        
+        function showCalibrationComplete(data) {
+            const progressDiv = document.getElementById('calibrationProgress');
+            const resultsDiv = document.getElementById('calibrationResults');
+            const startBtn = document.getElementById('startCalibration');
+            
+            progressDiv.classList.add('hidden');
+            resultsDiv.classList.remove('hidden');
+            startBtn.disabled = false;
+            
+            if (data.baseline_mean !== undefined) {
+                document.getElementById('resultMean').textContent = data.baseline_mean.toFixed(2);
+                document.getElementById('resultStddev').textContent = data.baseline_stddev ? data.baseline_stddev.toFixed(2) : 'N/A';
+                document.getElementById('resultThreshold').textContent = '8.0'; // THRESHOLD_CM from firmware
+            }
+        }
+
+        function updateCalibrationStatus() {
+            fetch('/api/calibration/status')
+                .then(response => response.json())
+                .then(data => {
+                    calibrationStatus = data;
+                    
+                    const progressDiv = document.getElementById('calibrationProgress');
+                    const resultsDiv = document.getElementById('calibrationResults');
+                    const startBtn = document.getElementById('startCalibration');
+                    
+                    if (data.state === 'in_progress') {
+                        progressDiv.classList.remove('hidden');
+                        resultsDiv.classList.add('hidden');
+                        startBtn.disabled = true;
+                        
+                        const progress = (data.samples_collected / data.total_samples) * 100;
+                        document.getElementById('progressFill').style.width = progress + '%';
+                        document.getElementById('progressFill').textContent = Math.round(progress) + '%';
+                        document.getElementById('progressText').textContent = 
+                            `Collecting samples: ${data.samples_collected}/${data.total_samples}`;
+                    } else if (data.state === 'complete') {
+                        progressDiv.classList.add('hidden');
+                        resultsDiv.classList.remove('hidden');
+                        startBtn.disabled = false;
+                        
+                        document.getElementById('resultMean').textContent = data.baseline_mean.toFixed(2);
+                        document.getElementById('resultStddev').textContent = data.baseline_stddev.toFixed(2);
+                        document.getElementById('resultThreshold').textContent = data.threshold_cm.toFixed(1);
+                    } else {
+                        progressDiv.classList.add('hidden');
+                        resultsDiv.classList.add('hidden');
+                        startBtn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching calibration status:', error);
+                });
+        }
+
+        function updateSensorChart() {
+            if (!chartingActive || !sensorChart) return;
+            
+            fetch('/api/sensor/data')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.readings && data.timestamps) {
+                        // Update chart scale based on calibration data
+                        updateChartScale(data);
+                        
+                        const now = Date.now();
+                        const maxPoints = 50; // Keep last 50 points
+                        
+                        // Clear existing data
+                        chartData.labels = [];
+                        chartData.datasets[0].data = [];
+                        chartData.datasets[1].data = [];
+                        chartData.datasets[2].data = [];
+                        
+                        // Add new data points
+                        for (let i = Math.max(0, data.readings.length - maxPoints); i < data.readings.length; i++) {
+                            // Create relative time labels (seconds ago)
+                            const timeAgo = (data.timestamps[data.timestamps.length - 1] - data.timestamps[i]) / 1000;
+                            chartData.labels.push(timeAgo.toFixed(1));
+                            
+                            // Filter out invalid readings (500 = timeout)
+                            const reading = data.readings[i] === 500 ? null : data.readings[i];
+                            chartData.datasets[0].data.push(reading);
+                            
+                            // Add baseline and threshold lines if calibrated
+                            if (data.calibrated && data.baseline_mean !== 500) {
+                                chartData.datasets[1].data.push(data.baseline_mean);
+                                chartData.datasets[2].data.push(data.threshold_distance);
+                            } else {
+                                chartData.datasets[1].data.push(null);
+                                chartData.datasets[2].data.push(null);
+                            }
+                        }
+                        
+                        sensorChart.update('none'); // Update without animation for smoother real-time
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching sensor data:', error);
+                });
+        }
+
+        function updateControlsState() {
+            const isOverride = bridgeStatus.manual_override;
+            
+            // Update override buttons
+            document.getElementById('enableOverride').disabled = isOverride;
+            document.getElementById('disableOverride').disabled = !isOverride;
+            
+            // Update manual control buttons
+            document.getElementById('bridgeUp').disabled = !isOverride;
+            document.getElementById('bridgeDown').disabled = !isOverride;
+            document.getElementById('bridgeStop').disabled = !isOverride;
+            document.getElementById('bridgeReset').disabled = !isOverride;
+            
+            // Update speed control
+            document.getElementById('motorSpeedInput').disabled = !isOverride;
+            document.getElementById('setSpeed').disabled = !isOverride;
+            
+            // Update alerts
+            const overrideAlert = document.getElementById('overrideAlert');
+            const manualAlert = document.getElementById('manualAlert');
+            
+            if (isOverride) {
+                overrideAlert.style.display = 'block';
+                manualAlert.style.display = 'none';
+            } else {
+                overrideAlert.style.display = 'none';
+                manualAlert.style.display = 'block';
+            }
+        }
+
+        function startCalibration() {
+
+            fetch('/api/calibration/start', { method: 'POST' })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        alert('Calibration started! Keep the water area clear of boats.');
+                        updateCalibrationStatus();
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error starting calibration:', error);
+                    alert('Network error occurred: ' + error.message);
+                });
+        }
+        
+        function startCarCalibration() {
+            fetch('/api/car/calibration/start', { method: 'POST' })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        alert('Car calibration started! Keep the bridge area clear of cars.');
+                        updateCarCalibrationStatus();
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error starting car calibration:', error);
+                    alert('Network error occurred: ' + error.message);
+                });
+        }
+
+        function resetCalibration() {
+            fetch('/api/calibration/reset', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Calibration reset successfully');
+                        updateCalibrationStatus();
+                        updateStatus();
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error resetting calibration:', error);
+                    alert('Network error occurred: ' + error.message);
+                });
+        }
+        
+        function resetCarCalibration() {
+            fetch('/api/car/calibration/reset', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Car calibration reset successfully');
+                        updateCarCalibrationStatus();
+                        updateStatus();
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error resetting car calibration:', error);
+                    alert('Network error occurred: ' + error.message);
+                });
+        }
+
+        function toggleChart() {
+            const btn = document.getElementById('toggleChart');
+            if (chartingActive) {
+                chartingActive = false;
+                btn.textContent = 'Start Live Chart';
+                btn.className = 'btn-primary';
+            } else {
+                chartingActive = true;
+                btn.textContent = 'Stop Live Chart';
+                btn.className = 'btn-danger';
+            }
+        }
+        
+        function toggleCarChart() {
+            const btn = document.getElementById('toggleCarChart');
+            if (carChartingActive) {
+                carChartingActive = false;
+                btn.textContent = 'Start Live Chart';
+                btn.className = 'btn-primary';
+            } else {
+                carChartingActive = true;
+                btn.textContent = 'Stop Live Chart';
+                btn.className = 'btn-danger';
+            }
+        }
+
+        function clearChart() {
+            chartData.labels = [];
+            chartData.datasets[0].data = [];
+            chartData.datasets[1].data = [];
+            chartData.datasets[2].data = [];
+            if (sensorChart) {
+                sensorChart.update();
+            }
+        }
+        
+        function clearCarChart() {
+            carChartData.labels = [];
+            carChartData.datasets[0].data = [];
+            carChartData.datasets[1].data = [];
+            carChartData.datasets[2].data = [];
+            if (carSensorChart) {
+                carSensorChart.update();
+            }
+        }
+
+        function toggleOverride(enable) {
+            fetch(`/api/bridge/override?enable=${enable}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateStatus();
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error toggling override:', error);
+                    alert('Network error occurred');
+                });
+        }
+
+        function toggleCarDetection(enable) {
+            fetch(`/api/car-detection?enable=${enable}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateStatus();
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error toggling car detection:', error);
+                    alert('Network error occurred');
+                });
+        }
+
+        function controlBridge(action) {
+            if (!bridgeStatus.manual_override) {
+                alert('Manual override must be enabled first');
+                return;
+            }
+            
+            fetch(`/api/bridge/control?action=${action}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateStatus();
+                        if (action === 'reset') {
+                            setTimeout(updateStatus, 500);
+                        }
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error controlling bridge:', error);
+                    alert('Network error occurred');
+                });
+        }
+
+        function setMotorSpeed() {
+            if (!bridgeStatus.manual_override) {
+                alert('Manual override must be enabled first');
+                return;
+            }
+            
+            const speedInput = document.getElementById('motorSpeedInput');
+            const speed = parseInt(speedInput.value);
+            
+            if (isNaN(speed) || speed < 0 || speed > 100) {
+                alert('Please enter a valid speed between 0 and 100');
+                return;
+            }
+            
+            fetch(`/api/motor/speed?speed=${speed}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(`Motor speed set to ${speed}%`);
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error setting motor speed:', error);
+                    alert('Network error occurred');
+                });
+        }
+        
+        function getHallThreshold() {
+            fetch('/api/hall/threshold')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('hallThresholdInput').value = data.threshold;
+                        showThresholdMessage('Current threshold: ' + data.threshold, 'success');
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error getting hall threshold:', error);
+                    alert('Network error occurred');
+                });
+        }
+        
+        function setHallThreshold() {
+            const thresholdInput = document.getElementById('hallThresholdInput');
+            const threshold = parseInt(thresholdInput.value);
+            
+            if (isNaN(threshold) || threshold < 0 || threshold > 4095) {
+                alert('Please enter a valid threshold between 0 and 4095');
+                return;
+            }
+            
+            fetch(`/api/hall/threshold/set?threshold=${threshold}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showThresholdMessage('Threshold set to ' + data.threshold + ' successfully!', 'success');
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error setting hall threshold:', error);
+                    alert('Network error occurred');
+                });
+        }
+        
+        function showThresholdMessage(message, type) {
+            const statusDiv = document.getElementById('thresholdStatus');
+            const messageP = document.getElementById('thresholdMessage');
+            
+            messageP.textContent = message;
+            statusDiv.classList.remove('hidden');
+            
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+                statusDiv.classList.add('hidden');
+            }, 3000);
+        }
+        
+        function updateCarCalibrationStatus() {
+            fetch('/api/car/calibration/status')
+                .then(response => response.json())
+                .then(data => {
+                    carCalibrationStatus = data;
+                    
+                    const progressDiv = document.getElementById('carCalibrationProgress');
+                    const resultsDiv = document.getElementById('carCalibrationResults');
+                    const startBtn = document.getElementById('startCarCalibration');
+                    
+                    if (data.state === 'in_progress') {
+                        progressDiv.classList.remove('hidden');
+                        resultsDiv.classList.add('hidden');
+                        startBtn.disabled = true;
+                        
+                        const progress = (data.samples_collected / data.total_samples) * 100;
+                        document.getElementById('carProgressFill').style.width = progress + '%';
+                        document.getElementById('carProgressFill').textContent = Math.round(progress) + '%';
+                        document.getElementById('carProgressText').textContent = 
+                            `Collecting samples: ${data.samples_collected}/${data.total_samples}`;
+                    } else if (data.state === 'complete') {
+                        progressDiv.classList.add('hidden');
+                        resultsDiv.classList.remove('hidden');
+                        startBtn.disabled = false;
+                        
+                        document.getElementById('carResultMean').textContent = data.baseline_mean.toFixed(2);
+                        document.getElementById('carResultStddev').textContent = data.baseline_stddev.toFixed(2);
+                        document.getElementById('carResultThreshold').textContent = data.threshold_cm.toFixed(1);
+                    } else {
+                        progressDiv.classList.add('hidden');
+                        resultsDiv.classList.add('hidden');
+                        startBtn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching car calibration status:', error);
+                });
+        }
+        
+        function updateCarSensorChart() {
+            if (!carChartingActive || !carSensorChart) return;
+            
+            fetch('/api/car/sensor/data')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.readings && data.timestamps) {
+                        // Update chart scale based on calibration data
+                        updateCarChartScale(data);
+                        
+                        const now = Date.now();
+                        const maxPoints = 50; // Keep last 50 points
+                        
+                        // Clear existing data
+                        carChartData.labels = [];
+                        carChartData.datasets[0].data = [];
+                        carChartData.datasets[1].data = [];
+                        carChartData.datasets[2].data = [];
+                        
+                        // Add new data points
+                        for (let i = Math.max(0, data.readings.length - maxPoints); i < data.readings.length; i++) {
+                            // Create relative time labels (seconds ago)
+                            const timeAgo = (data.timestamps[data.timestamps.length - 1] - data.timestamps[i]) / 1000;
+                            carChartData.labels.push(timeAgo.toFixed(1));
+                            
+                            // Filter out invalid readings (500 = timeout)
+                            const reading = data.readings[i] === 500 ? null : data.readings[i];
+                            carChartData.datasets[0].data.push(reading);
+                            
+                            // Add baseline and threshold lines if calibrated
+                            if (data.calibrated && data.baseline_mean !== 500) {
+                                carChartData.datasets[1].data.push(data.baseline_mean);
+                                carChartData.datasets[2].data.push(data.threshold_distance);
+                            } else {
+                                carChartData.datasets[1].data.push(null);
+                                carChartData.datasets[2].data.push(null);
+                            }
+                        }
+                        
+                        carSensorChart.update('none'); // Update without animation for smoother real-time
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching car sensor data:', error);
+                });
+        }
+
+        // Initialize everything when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+
+            
+            // Initialize charts (with fallback if Chart.js fails to load)
+            if (typeof Chart !== 'undefined') {
+                initChart();
+                initCarChart();
+            } else {
+                console.error('Chart.js not loaded');
+                document.getElementById('sensorChart').innerHTML = 'Chart.js failed to load';
+                document.getElementById('carSensorChart').innerHTML = 'Chart.js failed to load';
+            }
+            
+            // Start optimized polling - simpler and more reliable than SSE on ESP32
+            updateStatus();
+            updateCalibrationStatus();
+            updateCarCalibrationStatus();
+            getHallThreshold();  // Load initial hall threshold value
+            
+            // Adaptive polling frequency
+            setInterval(function() {
+                updateStatus();
+                
+                // Faster updates during calibration
+                if (calibrationStatus && calibrationStatus.state === 'in_progress') {
+                    updateCalibrationStatus();
+                }
+                if (carCalibrationStatus && carCalibrationStatus.state === 'in_progress') {
+                    updateCarCalibrationStatus();
+                }
+            }, 1000); // 1 second for general updates
+            
+            // Slower calibration updates when not active  
+            setInterval(function() {
+                if (!calibrationStatus || calibrationStatus.state !== 'in_progress') {
+                    updateCalibrationStatus();
+                }
+                if (!carCalibrationStatus || carCalibrationStatus.state !== 'in_progress') {
+                    updateCarCalibrationStatus();
+                }
+            }, 3000); // 3 seconds for inactive calibration
+            
+            // Chart updates when active
+            setInterval(function() {
+                if (chartingActive) {
+                    updateSensorChart();
+                }
+                if (carChartingActive) {
+                    updateCarSensorChart();
+                }
+            }, 500); // 500ms for smooth chart
+        });
+    </script>
+</body>
+</html>
