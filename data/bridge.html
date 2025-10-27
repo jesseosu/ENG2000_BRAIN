@@ -207,6 +207,10 @@
                 <div class="status-value" id="boatDistance">Loading...</div>
             </div>
             <div class="status-card">
+                <h3>Detection Meter</h3>
+                <div class="status-value" id="detectionMeterValue">Loading...</div>
+            </div>
+            <div class="status-card">
                 <h3>Hall Lowered Raw</h3>
                 <div class="status-value" id="hallLoweredRaw">Loading...</div>
             </div>
@@ -299,6 +303,15 @@
                 <button id="startCalibration" class="btn-warning" onclick="startCalibration()">Start Calibration</button>
                 <button id="resetCalibration" class="btn-secondary" onclick="resetCalibration()">Reset</button>
             </div>
+        </div>
+
+        <div class="control-section">
+            <h3>🔔 Detection Meter</h3>
+            <p>Shows a smoothed detection confidence (0–100). Meter fills when candidate readings appear and decays over time.</p>
+            <div class="progress-bar" aria-label="Detection meter">
+                <div class="progress-fill" id="detectionMeterFill">0%</div>
+            </div>
+            <p id="detectionMeterText">Meter: <span id="detectionMeterPercent">0%</span></p>
         </div>
 
         <div class="control-section">
@@ -599,6 +612,32 @@
             carSensorChart.options.scales.y.max = maxY;
         }
 
+        // Update the detection meter UI (0-100)
+        function updateDetectionMeter(data) {
+            const meterVal = (data && typeof data.detection_meter !== 'undefined') ? data.detection_meter : null;
+            const meterTextEl = document.getElementById('detectionMeterValue');
+            const meterFillEl = document.getElementById('detectionMeterFill');
+            const meterPercentEl = document.getElementById('detectionMeterPercent');
+
+            if (meterVal === null) {
+                if (meterTextEl) meterTextEl.textContent = 'N/A';
+                if (meterFillEl) {
+                    meterFillEl.style.width = '0%';
+                    meterFillEl.textContent = 'N/A';
+                }
+                if (meterPercentEl) meterPercentEl.textContent = 'N/A';
+                return;
+            }
+
+            const pct = Math.max(0, Math.min(100, Math.round(meterVal)));
+            if (meterTextEl) meterTextEl.textContent = pct + '%';
+            if (meterFillEl) {
+                meterFillEl.style.width = pct + '%';
+                meterFillEl.textContent = pct + '%';
+            }
+            if (meterPercentEl) meterPercentEl.textContent = pct + '%';
+        }
+
         // Initialize Server-Sent Events connection
         function initSSE() {
             if (eventSource) {
@@ -621,6 +660,8 @@
                     document.getElementById('bridgeState').textContent = data.state || 'Unknown';
                     document.getElementById('boatPresent').textContent = data.boat_present ? 'YES' : 'NO';
                     document.getElementById('boatDistance').textContent = data.boat_distance ? data.boat_distance.toFixed(1) + ' cm' : 'N/A';
+                    // Update detection meter if provided via SSE
+                    try { updateDetectionMeter(data); } catch (e) { /* ignore */ }
                     
                     // Update calibration info
                     if (data.calibrated) {
@@ -759,6 +800,8 @@
                         document.getElementById('enableCarDetect').disabled = data.car_detection_enabled;
                         document.getElementById('disableCarDetect').disabled = !data.car_detection_enabled;
                     }
+                    // Update detection meter (from bridge status JSON)
+                    try { updateDetectionMeter(data); } catch (e) { /* ignore */ }
                     
                     updateControlsState();
                 })

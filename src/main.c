@@ -131,6 +131,11 @@ static pin_config_t pins = {
 #define MAX_SENSOR_READINGS 100       // buffer size for live graph data
 #define CALIB_SAMPLE_DELAY_MS 50      // Faster sampling during calibration
 
+// Detection meter parameters (0-100)
+#define METER_MAX 100
+#define METER_INCREMENT 25            // add per valid candidate reading
+#define METER_DECAY_PER_SEC 20        // decay per second when no candidate
+
 // Ultrasonic timeout/backoff parameters
 #define ULTRASONIC_TIMEOUT_STREAK 5    // consecutive timeouts before cooldown
 #define ULTRASONIC_COOLDOWN_MS 10000   // cooldown duration after repeated timeouts (ms)
@@ -198,6 +203,10 @@ static float car_sensor_readings[MAX_SENSOR_READINGS];
 static uint32_t car_reading_timestamps[MAX_SENSOR_READINGS];
 static int car_reading_index = 0;
 static int car_readings_count = 0;
+
+// Boat detection meter (0-100) and timing for decay
+static int boat_detection_meter = 0;
+static uint32_t last_meter_update_ms = 0;
 
 // Ultrasonic timeout tracking / cooldown state
 static int boat_timeout_streak = 0;
@@ -675,6 +684,18 @@ bool detect_boat_calibrated(float distance) {
     return boat_detected;
 }
 
+// Helper that determines if a reading is a candidate for 'boat present'
+static bool is_boat_candidate(float distance) {
+    if (distance < 0) return false; // timeouts aren't candidates
+    if (calib_state == CALIB_COMPLETE) {
+        float delta = baseline_mean - distance; // Positive if something is closer
+        return (delta >= THRESHOLD_CM);
+    } else {
+        // Fallback unsophisticated threshold
+        return distance <= BOAT_PRESENT_DIST_CM;
+    }
+}
+
 // === CAR SENSOR CALIBRATION FUNCTIONS ===
 
 // Start car sensor calibration
@@ -870,6 +891,25 @@ void ultrasonic_task(void *pvParameters) {
                     add_to_data_buffer(distance);
                     detect_boat_calibrated(distance);
                     boat_timeout_streak = 0;
+                    // Update detection meter
+                    uint32_t now_meter_ms = esp_timer_get_time() / 1000;
+                    if (is_boat_candidate(distance)) {
+                        boat_detection_meter += METER_INCREMENT;
+                        if (boat_detection_meter > METER_MAX) boat_detection_meter = METER_MAX;
+                        last_meter_update_ms = now_meter_ms;
+                    } else {
+                        // decay based on elapsed time
+                        if (last_meter_update_ms == 0) last_meter_update_ms = now_meter_ms;
+                        uint32_t elapsed_ms = now_meter_ms - last_meter_update_ms;
+                        if (elapsed_ms > 0) {
+                            int decay = (METER_DECAY_PER_SEC * (int)elapsed_ms) / 1000;
+                            if (decay > 0) {
+                                boat_detection_meter -= decay;
+                                if (boat_detection_meter < 0) boat_detection_meter = 0;
+                                last_meter_update_ms = now_meter_ms;
+                            }
+                        }
+                    }
                 } else {
                     current_distance = -1.0;
                     boat_timeout_streak++;
@@ -1754,6 +1794,8 @@ static esp_err_t bridge_status_handler(httpd_req_t *req) {
     cJSON_AddBoolToObject(root, "led_b", led_b_state);
     // Car detection enabled flag
     cJSON_AddBoolToObject(root, "car_detection_enabled", car_detection_enabled);
+    // Detection meter for UI
+    cJSON_AddNumberToObject(root, "detection_meter", boat_detection_meter);
 
     const char *json_string = cJSON_Print(root);
     httpd_resp_set_type(req, "application/json");
@@ -1999,6 +2041,7 @@ static esp_err_t sensor_data_handler(httpd_req_t *req) {
     
     // Add current reading info
     cJSON_AddNumberToObject(root, "current_distance", current_distance);
+    cJSON_AddNumberToObject(root, "detection_meter", boat_detection_meter);
     cJSON_AddBoolToObject(root, "calibrated", calib_state == CALIB_COMPLETE);
     
     if (calib_state == CALIB_COMPLETE) {
