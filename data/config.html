@@ -286,11 +286,6 @@
                 <h2>🌉 Bridge Control Pins</h2>
                 <div class="pin-grid">
                     <div class="pin-item">
-                        <label class="pin-label">Bridge Servo:</label>
-                        <select class="pin-select" name="bridge_servo_pin" id="bridge_servo_pin">
-                        </select>
-                    </div>
-                    <div class="pin-item">
                         <label class="pin-label">Boat Sensor Trigger:</label>
                         <select class="pin-select" name="bridge_boat_trig_pin" id="bridge_boat_trig_pin">
                         </select>
@@ -301,13 +296,13 @@
                         </select>
                     </div>
                     <div class="pin-item">
-                        <label class="pin-label">Car Sensor Trigger:</label>
-                        <select class="pin-select" name="bridge_car_trig_pin" id="bridge_car_trig_pin">
+                        <label class="pin-label">Boat 2 Sensor Trigger:</label>
+                        <select class="pin-select" name="bridge_boat2_trig_pin" id="bridge_boat2_trig_pin">
                         </select>
                     </div>
                     <div class="pin-item">
-                        <label class="pin-label">Car Sensor Echo:</label>
-                        <select class="pin-select" name="bridge_car_echo_pin" id="bridge_car_echo_pin">
+                        <label class="pin-label">Boat 2 Sensor Echo:</label>
+                        <select class="pin-select" name="bridge_boat2_echo_pin" id="bridge_boat2_echo_pin">
                         </select>
                     </div>
                     <div class="pin-item">
@@ -339,8 +334,7 @@
                 <div class="pin-info">
                     <strong>Bridge Control Info:</strong>
                     <ul>
-                        <li><strong>Servo:</strong> Bridge lift servo motor control (PWM)</li>
-                        <li><strong>Boat/Car Sensors:</strong> HC-SR04 ultrasonic sensors for presence detection</li>
+                        <li><strong>Boat Sensors:</strong> HC-SR04 ultrasonic sensors for presence detection</li>
                         <li><strong>Limit Switches:</strong> Mechanical switches for bridge position detection</li>
                         <li><strong>RGB LED:</strong> Bridge status indication (red, green, blue channels)</li>
                     </ul>
@@ -457,7 +451,6 @@
                     if ([34, 35, 36, 39].includes(pin)) {
                         const isOutput = select.name.includes('trig') || 
                                         select.name.includes('led') || 
-                                        select.name.includes('servo') ||
                                         select.name.includes('dir') ||
                                         select.name.includes('ena');
                         if (isOutput) {

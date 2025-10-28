@@ -74,7 +74,6 @@ ENG2000_BRAIN is a modular, web-controlled IoT system designed for ESP32-based h
   - Accuracy: ±3mm
   - Calibration: 50 samples, baseline-relative threshold
 - Motor control: PWM (1 kHz), direction via L298N, encoder feedback
-- Bridge servo: 50 Hz PWM, position pulse widths configurable
 - Hall effect: ADC threshold adjustable via web UI
 - All configuration stored in NVS and SPIFFS
 

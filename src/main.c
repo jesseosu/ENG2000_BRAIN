@@ -34,11 +34,10 @@ typedef struct {
     gpio_num_t motor_ena_pin;
     
     // Bridge pins
-    gpio_num_t bridge_servo_pin;
     gpio_num_t bridge_boat_trig_pin;
     gpio_num_t bridge_boat_echo_pin;
-    gpio_num_t bridge_car_trig_pin;
-    gpio_num_t bridge_car_echo_pin;
+    gpio_num_t bridge_boat2_trig_pin;
+    gpio_num_t bridge_boat2_echo_pin;
     gpio_num_t bridge_sw_lowered_pin;
     gpio_num_t bridge_sw_raised_pin;
     gpio_num_t bridge_led_r_pin;
@@ -56,11 +55,10 @@ static pin_config_t default_pins = {
     .motor_in1_pin = GPIO_NUM_14,
     .motor_in2_pin = GPIO_NUM_27,
     .motor_ena_pin = GPIO_NUM_26,
-    .bridge_servo_pin = GPIO_NUM_25,
     .bridge_boat_trig_pin = GPIO_NUM_32,
     .bridge_boat_echo_pin = GPIO_NUM_33,
-    .bridge_car_trig_pin = GPIO_NUM_18,
-    .bridge_car_echo_pin = GPIO_NUM_19,
+    .bridge_boat2_trig_pin = GPIO_NUM_18,
+    .bridge_boat2_echo_pin = GPIO_NUM_19,
     .bridge_sw_lowered_pin = GPIO_NUM_21,
     .bridge_sw_raised_pin = GPIO_NUM_22,
     .bridge_led_r_pin = GPIO_NUM_16,
@@ -78,11 +76,10 @@ static pin_config_t pins = {
     .motor_in1_pin = GPIO_NUM_14,
     .motor_in2_pin = GPIO_NUM_27,
     .motor_ena_pin = GPIO_NUM_26,
-    .bridge_servo_pin = GPIO_NUM_25,
     .bridge_boat_trig_pin = GPIO_NUM_32,
     .bridge_boat_echo_pin = GPIO_NUM_33,
-    .bridge_car_trig_pin = GPIO_NUM_18,
-    .bridge_car_echo_pin = GPIO_NUM_19,
+    .bridge_boat2_trig_pin = GPIO_NUM_18,
+    .bridge_boat2_echo_pin = GPIO_NUM_19,
     .bridge_sw_lowered_pin = GPIO_NUM_21,
     .bridge_sw_raised_pin = GPIO_NUM_22,
     .bridge_led_r_pin = GPIO_NUM_16,
@@ -104,22 +101,18 @@ static pin_config_t pins = {
 #define PWM_TIMER LEDC_TIMER_0
 
 // Bridge PWM Configuration
-#define BRIDGE_PWM_FREQUENCY 50  // 50 Hz for servo
+#define BRIDGE_PWM_FREQUENCY 50  // 50 Hz
 #define BRIDGE_PWM_RESOLUTION LEDC_TIMER_16_BIT
 #define BRIDGE_PWM_CHANNEL LEDC_CHANNEL_1
 #define BRIDGE_PWM_TIMER LEDC_TIMER_1
 
 // Bridge constants
-#define CAR_ON_BRIDGE_DIST_CM 60
 #define BOAT_PRESENT_DIST_CM 200
 #define T_WARN_TRAFFIC 5000
 #define T_AFTER_STOP 5000
 #define T_LOWER_CAUT_YEL 5000
 #define T_AFTER_LOWERED 5000
 #define T_MAX_UP_HOLD 45000
-#define SERVO_STOP_US 1500
-#define SERVO_UP_US 1700
-#define SERVO_DOWN_US 1300
 
 // Ultrasonic calibration constants
 #define BASELINE_SAMPLES 50           // Reduced from 80 for faster calibration
@@ -186,33 +179,35 @@ static uint32_t reading_timestamps[MAX_SENSOR_READINGS];
 static int reading_index = 0;
 static int readings_count = 0;
 
-// Car sensor calibration
-static calibration_state_t car_calib_state = CALIB_IDLE;
-static float car_baseline_mean = 0.0;
-static float car_baseline_stddev = 0.0;
-static int car_calib_sample_count = 0;
-static float car_calib_samples[BASELINE_SAMPLES];
+static calibration_state_t boat2_calib_state = CALIB_IDLE;
+static float boat2_baseline_mean = 0.0;
+static float boat2_baseline_stddev = 0.0;
+static int boat2_calib_sample_count = 0;
+static float boat2_calib_samples[BASELINE_SAMPLES];
 
-// Car detection state variables
-static int car_consecutive_detections = 0;
-static int car_consecutive_clear = 0;
-static bool car_detected = false;
+// Boat2 detection state variables
+static int boat2_consecutive_detections = 0;
+static int boat2_consecutive_clear = 0;
+static bool boat2_detected = false;
 
-// Live data buffer for graphing (car sensor)
-static float car_sensor_readings[MAX_SENSOR_READINGS];
-static uint32_t car_reading_timestamps[MAX_SENSOR_READINGS];
-static int car_reading_index = 0;
-static int car_readings_count = 0;
+// Live data buffer for graphing (boat2 sensor)
+static float boat2_sensor_readings[MAX_SENSOR_READINGS];
+static uint32_t boat2_reading_timestamps[MAX_SENSOR_READINGS];
+static int boat2_reading_index = 0;
+static int boat2_readings_count = 0;
 
 // Boat detection meter (0-100) and timing for decay
 static int boat_detection_meter = 0;
 static uint32_t last_meter_update_ms = 0;
 
+// Which sensor first saw the boat during an approach: 0=unknown, 1=boat1, 2=boat2
+static int boat_initial_sensor = 0;
+
 // Ultrasonic timeout tracking / cooldown state
 static int boat_timeout_streak = 0;
-static int car_timeout_streak = 0;
+static int boat2_timeout_streak = 0;
 static uint32_t boat_cooldown_until_ms = 0;
-static uint32_t car_cooldown_until_ms = 0;
+static uint32_t boat2_cooldown_until_ms = 0;
 // Rate-limit last warning timestamp (microseconds)
 static int64_t last_ultrasonic_warn_time_us = 0;
 
@@ -237,8 +232,7 @@ static TaskHandle_t bridge_task_handle = NULL;
 static bool led_r_state = false;
 static bool led_g_state = false;
 static bool led_b_state = false;
-// Car detection enable/disable flag
-static bool car_detection_enabled = true;
+static bool car_detection_enabled = false;
 
 // Hall effect sensor threshold (in ADC raw value)
 static int hall_effect_threshold = 1650;  // Default: triggered when below 1650mV
@@ -339,9 +333,8 @@ bool has_pin_conflicts(pin_config_t* config) {
         config->ultrasonic_trig_pin, config->ultrasonic_echo_pin,
         config->motor_enca_pin, config->motor_encb_pin,
         config->motor_in1_pin, config->motor_in2_pin, config->motor_ena_pin,
-        config->bridge_servo_pin,
         config->bridge_boat_trig_pin, config->bridge_boat_echo_pin,
-        config->bridge_car_trig_pin, config->bridge_car_echo_pin,
+        config->bridge_boat2_trig_pin, config->bridge_boat2_echo_pin,
         config->bridge_sw_lowered_pin, config->bridge_sw_raised_pin,
         config->bridge_led_r_pin, config->bridge_led_g_pin, config->bridge_led_b_pin
     };
@@ -366,9 +359,8 @@ bool validate_pin_config(pin_config_t* config, char* error_msg, size_t error_len
         config->ultrasonic_trig_pin, config->ultrasonic_echo_pin,
         config->motor_enca_pin, config->motor_encb_pin,
         config->motor_in1_pin, config->motor_in2_pin, config->motor_ena_pin,
-        config->bridge_servo_pin,
         config->bridge_boat_trig_pin, config->bridge_boat_echo_pin,
-        config->bridge_car_trig_pin, config->bridge_car_echo_pin,
+        config->bridge_boat2_trig_pin, config->bridge_boat2_echo_pin,
         config->bridge_sw_lowered_pin, config->bridge_sw_raised_pin,
         config->bridge_led_r_pin, config->bridge_led_g_pin, config->bridge_led_b_pin
     };
@@ -574,14 +566,14 @@ void add_to_data_buffer(float distance) {
     }
 }
 
-// Add reading to live data buffer (car sensor)
-void add_to_car_data_buffer(float distance) {
-    car_sensor_readings[car_reading_index] = distance;
-    car_reading_timestamps[car_reading_index] = esp_timer_get_time() / 1000; // milliseconds
+// Add reading to live data buffer (boat2 sensor)
+void add_to_boat2_data_buffer(float distance) {
+    boat2_sensor_readings[boat2_reading_index] = distance;
+    boat2_reading_timestamps[boat2_reading_index] = esp_timer_get_time() / 1000; // milliseconds
     
-    car_reading_index = (car_reading_index + 1) % MAX_SENSOR_READINGS;
-    if (car_readings_count < MAX_SENSOR_READINGS) {
-        car_readings_count++;
+    boat2_reading_index = (boat2_reading_index + 1) % MAX_SENSOR_READINGS;
+    if (boat2_readings_count < MAX_SENSOR_READINGS) {
+        boat2_readings_count++;
     }
 }
 
@@ -696,103 +688,103 @@ static bool is_boat_candidate(float distance) {
     }
 }
 
-// === CAR SENSOR CALIBRATION FUNCTIONS ===
+// === BOAT2 SENSOR CALIBRATION FUNCTIONS ===
 
-// Start car sensor calibration
-void start_car_calibration() {
-    ESP_LOGI(TAG, "Starting car sensor calibration - keep bridge clear of cars");
-    car_calib_state = CALIB_IN_PROGRESS;
-    car_calib_sample_count = 0;
-    car_baseline_mean = 0.0;
-    car_baseline_stddev = 0.0;
-    car_consecutive_detections = 0;
-    car_consecutive_clear = 0;
-    car_detected = false;
+// Start boat2 sensor calibration
+void start_boat2_calibration() {
+    ESP_LOGI(TAG, "Starting boat2 sensor calibration - keep area clear of boats");
+    boat2_calib_state = CALIB_IN_PROGRESS;
+    boat2_calib_sample_count = 0;
+    boat2_baseline_mean = 0.0;
+    boat2_baseline_stddev = 0.0;
+    boat2_consecutive_detections = 0;
+    boat2_consecutive_clear = 0;
+    boat2_detected = false;
 }
 
-// Fast single reading for car calibration
-float get_car_calibration_reading() {
-    float distance = measure_distance(pins.bridge_car_trig_pin, pins.bridge_car_echo_pin);
+// Fast single reading for boat2 calibration
+float get_boat2_calibration_reading() {
+    float distance = measure_distance(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin);
     if (distance < 0) {
         return -1.0;
     }
     return distance;
 }
 
-// Process car calibration sample
-void process_car_calibration_sample(float distance) {
-    if (car_calib_state != CALIB_IN_PROGRESS) return;
+// Process boat2 calibration sample
+void process_boat2_calibration_sample(float distance) {
+    if (boat2_calib_state != CALIB_IN_PROGRESS) return;
     
     // Only accept valid readings for calibration
     if (!is_valid_calibration_reading(distance)) {
         return;
     }
     
-    car_calib_samples[car_calib_sample_count] = distance;
-    car_calib_sample_count++;
+    boat2_calib_samples[boat2_calib_sample_count] = distance;
+    boat2_calib_sample_count++;
     
     // Log progress every 10 samples to reduce log spam
-    if (car_calib_sample_count % 10 == 0 || car_calib_sample_count == BASELINE_SAMPLES) {
-        ESP_LOGI(TAG, "Car calibration progress: %d/%d samples", car_calib_sample_count, BASELINE_SAMPLES);
+    if (boat2_calib_sample_count % 10 == 0 || boat2_calib_sample_count == BASELINE_SAMPLES) {
+        ESP_LOGI(TAG, "Boat2 calibration progress: %d/%d samples", boat2_calib_sample_count, BASELINE_SAMPLES);
     }
     
-    if (car_calib_sample_count >= BASELINE_SAMPLES) {
+    if (boat2_calib_sample_count >= BASELINE_SAMPLES) {
         // Calculate mean
         double sum = 0.0;
         for (int i = 0; i < BASELINE_SAMPLES; i++) {
-            sum += car_calib_samples[i];
+            sum += boat2_calib_samples[i];
         }
-        car_baseline_mean = sum / BASELINE_SAMPLES;
+        boat2_baseline_mean = sum / BASELINE_SAMPLES;
         
         // Calculate standard deviation
         double variance_sum = 0.0;
         for (int i = 0; i < BASELINE_SAMPLES; i++) {
-            float diff = car_calib_samples[i] - car_baseline_mean;
+            float diff = boat2_calib_samples[i] - boat2_baseline_mean;
             variance_sum += diff * diff;
         }
-        car_baseline_stddev = sqrt(variance_sum / BASELINE_SAMPLES);
+        boat2_baseline_stddev = sqrt(variance_sum / BASELINE_SAMPLES);
         
-        car_calib_state = CALIB_COMPLETE;
-        ESP_LOGI(TAG, "Car calibration COMPLETE:");
-        ESP_LOGI(TAG, "  Baseline Mean: %.2f cm", car_baseline_mean);
-        ESP_LOGI(TAG, "  Std Deviation: %.2f cm", car_baseline_stddev);
+        boat2_calib_state = CALIB_COMPLETE;
+        ESP_LOGI(TAG, "Boat2 calibration COMPLETE:");
+        ESP_LOGI(TAG, "  Baseline Mean: %.2f cm", boat2_baseline_mean);
+        ESP_LOGI(TAG, "  Std Deviation: %.2f cm", boat2_baseline_stddev);
         ESP_LOGI(TAG, "  Detection threshold: %.1f cm closer than baseline", THRESHOLD_CM);
     }
 }
 
-// Enhanced car detection using baseline calibration
-bool detect_car_calibrated(float distance) {
-    if (car_calib_state != CALIB_COMPLETE) {
+// Enhanced boat2 detection using baseline calibration
+bool detect_boat2_calibrated(float distance) {
+    if (boat2_calib_state != CALIB_COMPLETE) {
         // Fallback to simple threshold if not calibrated
-        return distance <= CAR_ON_BRIDGE_DIST_CM;
+        return distance <= BOAT_PRESENT_DIST_CM; // reuse same numeric dist for on-deck checks
     }
     
-    float delta = car_baseline_mean - distance; // Positive if something is closer
+    float delta = boat2_baseline_mean - distance; // Positive if something is closer
     bool candidate = (delta >= THRESHOLD_CM);
     
     if (candidate) {
-        car_consecutive_detections++;
-        car_consecutive_clear = 0;
+        boat2_consecutive_detections++;
+        boat2_consecutive_clear = 0;
     } else {
-        car_consecutive_detections = 0;
-        car_consecutive_clear++;
+        boat2_consecutive_detections = 0;
+        boat2_consecutive_clear++;
     }
     
     // Require consecutive detections to trigger
-    if (!car_detected && car_consecutive_detections >= REQUIRED_CONSECUTIVE) {
-        car_detected = true;
-        ESP_LOGI(TAG, "CAR DETECTED: distance=%.2f, delta=%.2f, consecutive=%d", 
-                 distance, delta, car_consecutive_detections);
+    if (!boat2_detected && boat2_consecutive_detections >= REQUIRED_CONSECUTIVE) {
+        boat2_detected = true;
+        ESP_LOGI(TAG, "BOAT2 DETECTED: distance=%.2f, delta=%.2f, consecutive=%d", 
+                 distance, delta, boat2_consecutive_detections);
     }
     
     // Require consecutive clear readings to reset
-    if (car_detected && car_consecutive_clear >= RESET_CONSECUTIVE) {
-        car_detected = false;
-        ESP_LOGI(TAG, "CAR CLEARED: distance=%.2f, consecutive_clear=%d", 
-                 distance, car_consecutive_clear);
+    if (boat2_detected && boat2_consecutive_clear >= RESET_CONSECUTIVE) {
+        boat2_detected = false;
+        ESP_LOGI(TAG, "BOAT2 CLEARED: distance=%.2f, consecutive_clear=%d", 
+                 distance, boat2_consecutive_clear);
     }
     
-    return car_detected;
+    return boat2_detected;
 }
 
 // Ultrasonic sensor measurement function
@@ -850,7 +842,7 @@ float measure_distance(gpio_num_t trig_pin, gpio_num_t echo_pin) {
 void ultrasonic_task(void *pvParameters) {
     while (1) {
         float distance;
-        float car_distance;
+        float boat2_distance;
         // === BOAT SENSOR ===
         // Use faster sampling during calibration
         uint32_t now_ms = esp_timer_get_time() / 1000;
@@ -924,42 +916,40 @@ void ultrasonic_task(void *pvParameters) {
             vTaskDelay(SAMPLE_INTERVAL_MS / portTICK_PERIOD_MS);
         }
         
-        // === CAR SENSOR ===
-        // Handle car sensor calibration and detection
-        if (car_calib_state == CALIB_IN_PROGRESS) {
-            car_distance = get_car_calibration_reading();
+        // === BOAT2 SENSOR ===
+        // Handle boat2 sensor calibration and detection
+        if (boat2_calib_state == CALIB_IN_PROGRESS) {
+                boat2_distance = get_boat2_calibration_reading();
 
-            if (car_distance > 0) {
-                // Add to data buffer for live graphing
-                add_to_car_data_buffer(car_distance);
-                car_timeout_streak = 0;
+            if (boat2_distance > 0) {
+                    add_to_boat2_data_buffer(boat2_distance);
+                boat2_timeout_streak = 0;
             } else {
-                car_timeout_streak++;
+                boat2_timeout_streak++;
             }
 
             // Process calibration (only valid readings)
-            process_car_calibration_sample(car_distance);
+            process_boat2_calibration_sample(boat2_distance);
         } else {
-            // If currently in cooldown for car sensor, skip sampling
+            // If currently in cooldown for boat2 sensor, skip sampling
             uint32_t now_ms2 = esp_timer_get_time() / 1000;
-            if (now_ms2 < car_cooldown_until_ms) {
+            if (now_ms2 < boat2_cooldown_until_ms) {
                 // Skipped due to cooldown
             } else {
-                // Regular car sensor reading
-                car_distance = measure_distance(pins.bridge_car_trig_pin, pins.bridge_car_echo_pin);
+                // Regular boat2 sensor reading
+                    boat2_distance = measure_distance(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin);
 
-                if (car_distance > 0) {
-                    // Add to data buffer for live graphing
-                    add_to_car_data_buffer(car_distance);
+                if (boat2_distance > 0) {
+                        add_to_boat2_data_buffer(boat2_distance);
                     // Update detection state (only when not calibrating)
-                    detect_car_calibrated(car_distance);
-                    car_timeout_streak = 0;
+                        detect_boat2_calibrated(boat2_distance);
+                    boat2_timeout_streak = 0;
                 } else {
-                    car_timeout_streak++;
-                    if (car_timeout_streak >= ULTRASONIC_TIMEOUT_STREAK) {
-                        car_cooldown_until_ms = now_ms2 + ULTRASONIC_COOLDOWN_MS;
-                        ESP_LOGW(TAG, "Car sensor entering cooldown for %d ms after %d timeouts", ULTRASONIC_COOLDOWN_MS, car_timeout_streak);
-                        car_timeout_streak = 0;
+                    boat2_timeout_streak++;
+                    if (boat2_timeout_streak >= ULTRASONIC_TIMEOUT_STREAK) {
+                        boat2_cooldown_until_ms = now_ms2 + ULTRASONIC_COOLDOWN_MS;
+                        ESP_LOGW(TAG, "Boat2 sensor entering cooldown for %d ms after %d timeouts", ULTRASONIC_COOLDOWN_MS, boat2_timeout_streak);
+                        boat2_timeout_streak = 0;
                     }
                 }
             }
@@ -1131,8 +1121,16 @@ float bridge_ping_cm(gpio_num_t trig, gpio_num_t echo) {
 }
 
 bool bridge_car_on_bridge() {
-    if (!car_detection_enabled) return false;
-    return bridge_ping_cm(pins.bridge_car_trig_pin, pins.bridge_car_echo_pin) <= CAR_ON_BRIDGE_DIST_CM;
+    // Car ultrasonic has been removed and will be replaced by a thin-film pressure sensor (XC3738) later.
+    // This function is a placeholder for the future weight/pressure-based car detection logic.
+    // TODO: Integrate XC3738 thin-film pressure sensor here. Typical implementation notes:
+    //  - Read sensor via ADC or I2C depending on breakout (XC3738 may require an op-amp / interface)
+    //  - Apply a short moving-average and hysteresis to avoid chatter
+    //  - Persist calibrated threshold to NVS so it survives reboots
+    //  - Expose an API to recalibrate the threshold and to enable/disable car detection
+    // For now return false so the bridge logic treats the deck as clear of cars.
+    (void)pins; // keep compiler happy about unused symbols
+    return false;
 }
 
 bool bridge_boat_present() {
@@ -1144,56 +1142,13 @@ bool bridge_boat_present() {
     }
 }
 
-void bridge_servo_control(int pulse_us) {
-    switch (pulse_us)
-    {
-    case 1500:
-        motor_stop();
-        break;
-    case 1700:
-        // RAISING - inverted direction
-        motor_set_direction(false);  // Changed from true to false
-        motor_set_speed(70);  // Increased to 70% for raising - needs more power
-        motor_start();
-        break;
-    case 1300:
-        // LOWERING - inverted direction
-        motor_set_direction(true);  // Changed from false to true
-        motor_set_speed(50);
-        motor_start();
-        break;
-
-    default:
-        motor_stop();
-        break;
+// Presence check for the second boat ultrasonic
+bool bridge_boat2_present() {
+    if (boat2_calib_state == CALIB_COMPLETE) {
+        return boat2_detected;
+    } else {
+        return bridge_ping_cm(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin) <= BOAT_PRESENT_DIST_CM;
     }
-}
-
-void bridge_servo_stop() { bridge_servo_control(SERVO_STOP_US); }
-void bridge_servo_up() { bridge_servo_control(SERVO_UP_US); }
-void bridge_servo_down() { bridge_servo_control(SERVO_DOWN_US); }
-
-void bridge_init_servo() {
-    ledc_timer_config_t timer_config = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .duty_resolution = BRIDGE_PWM_RESOLUTION,
-        .timer_num = BRIDGE_PWM_TIMER,
-        .freq_hz = BRIDGE_PWM_FREQUENCY,
-        .clk_cfg = LEDC_AUTO_CLK
-    };
-    ledc_timer_config(&timer_config);
-
-    ledc_channel_config_t channel_config = {
-        .gpio_num = pins.bridge_servo_pin,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = BRIDGE_PWM_CHANNEL,
-        .timer_sel = BRIDGE_PWM_TIMER,
-        .duty = 0,
-        .hpoint = 0
-    };
-    ledc_channel_config(&channel_config);
-    
-    bridge_servo_stop();
 }
 
 const char* bridge_state_name(bridge_state_t state) {
@@ -1237,20 +1192,13 @@ void bridge_task(void *pvParameters) {
 
         switch (bridge_state) {
             case BRIDGE_SELFTEST: {
-                bool car_ok;
-                if (!car_detection_enabled) {
-                    car_ok = true; // skip car sensor check when disabled
-                } else {
-                    car_ok = (bridge_ping_cm(pins.bridge_car_trig_pin, pins.bridge_car_echo_pin) < 9999);
-                }
                 bool boat_ok = (bridge_ping_cm(pins.bridge_boat_trig_pin, pins.bridge_boat_echo_pin) < 9999);
-                
+                bool boat2_ok = (bridge_ping_cm(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin) < 9999);
+
                 if (((current_time / 300) % 2) == 0) bridge_led_warning();
                 else bridge_led_off();
-                
-                bridge_servo_stop();
 
-                if (car_ok && boat_ok && (current_time - bridge_state_start) > 1200) {
+                if (boat_ok && boat2_ok && (current_time - bridge_state_start) > 1200) {
                     bridge_led_traffic_go();
                     ESP_LOGI(TAG, "Bridge self-test OK. System ARMED.");
                     bridge_set_state(BRIDGE_ARMED);
@@ -1259,11 +1207,20 @@ void bridge_task(void *pvParameters) {
             }
 
             case BRIDGE_ARMED:
-                bridge_servo_stop();
-                if (bridge_boat_present()) {
-                    bridge_led_warning();
-                    ESP_LOGI(TAG, "Boat detected: WARN_TRAFFIC.");
-                    bridge_set_state(BRIDGE_WARN_TRAFFIC);
+                {
+                    // Check both boat sensors (primary and boat2). The sensor that first sees the boat
+                    // is recorded in boat_initial_sensor to guide the TOP->pre-lower sequencing.
+                    if (bridge_boat_present()) {
+                        boat_initial_sensor = 1;
+                        bridge_led_warning();
+                        ESP_LOGI(TAG, "Boat detected by sensor1: WARN_TRAFFIC.");
+                        bridge_set_state(BRIDGE_WARN_TRAFFIC);
+                    } else if (bridge_boat2_present()) {
+                        boat_initial_sensor = 2;
+                        bridge_led_warning();
+                        ESP_LOGI(TAG, "Boat detected by sensor2: WARN_TRAFFIC.");
+                        bridge_set_state(BRIDGE_WARN_TRAFFIC);
+                    }
                 }
                 break;
 
@@ -1286,14 +1243,12 @@ void bridge_task(void *pvParameters) {
                 if (!bridge_car_on_bridge()) {
                     ESP_LOGI(TAG, "Deck clear. Raising bridge.");
                     bridge_led_stop();
-                    bridge_servo_up();
                     bridge_set_state(BRIDGE_RAISING);
                 }
                 break;
 
             case BRIDGE_RAISING:
                 if (bridge_switch_triggered(pins.bridge_sw_raised_pin)) {
-                    bridge_servo_stop();
                     bridge_led_boat_go();
                     ESP_LOGI(TAG, "Top limit reached. Boat GREEN.");
                     bridge_set_state(BRIDGE_TOP_REACHED);
@@ -1301,7 +1256,8 @@ void bridge_task(void *pvParameters) {
                 break;
 
             case BRIDGE_TOP_REACHED: {
-                bool boat_present = bridge_boat_present();
+                bool boat1_present = bridge_boat_present();
+                bool boat2_present = bridge_boat2_present();
 
                 if ((current_time - bridge_top_enter_time) >= T_MAX_UP_HOLD) {
                     ESP_LOGI(TAG, "TOP watchdog elapsed — proceeding to pre-lower.");
@@ -1311,15 +1267,32 @@ void bridge_task(void *pvParameters) {
                 }
 
                 if (!bridge_top_saw_gap) {
-                    if (!boat_present) {
+                    // Wait for the initial sensor to lose sight (gap) indicating the boat is passing under
+                    if (!boat1_present && !boat2_present) {
                         bridge_top_saw_gap = true;
-                        ESP_LOGI(TAG, "Boat sensor gap detected. Waiting for boat to return...");
+                        ESP_LOGI(TAG, "Boat sensors gap detected. Waiting for the other sensor to see the boat...");
                     }
                 } else {
-                    if (boat_present) {
-                        ESP_LOGI(TAG, "Boat sensed again — starting pre-lower delay.");
-                        bridge_led_warning();
-                        bridge_set_state(BRIDGE_PRE_LOWER_WARN);
+                    // We already saw a gap. Now require that the other sensor detects the boat to confirm passage.
+                    if (boat_initial_sensor == 1) {
+                        if (boat2_present) {
+                            ESP_LOGI(TAG, "Boat sensed by sensor2 after gap — starting pre-lower delay.");
+                            bridge_led_warning();
+                            bridge_set_state(BRIDGE_PRE_LOWER_WARN);
+                        }
+                    } else if (boat_initial_sensor == 2) {
+                        if (boat1_present) {
+                            ESP_LOGI(TAG, "Boat sensed by sensor1 after gap — starting pre-lower delay.");
+                            bridge_led_warning();
+                            bridge_set_state(BRIDGE_PRE_LOWER_WARN);
+                        }
+                    } else {
+                        // Fallback: if any sensor reports presence again, proceed
+                        if (boat1_present || boat2_present) {
+                            ESP_LOGI(TAG, "Boat sensed again — starting pre-lower delay.");
+                            bridge_led_warning();
+                            bridge_set_state(BRIDGE_PRE_LOWER_WARN);
+                        }
                     }
                 }
                 break;
@@ -1329,14 +1302,12 @@ void bridge_task(void *pvParameters) {
                 if ((current_time - bridge_state_start) >= T_LOWER_CAUT_YEL) {
                     bridge_led_stop();
                     ESP_LOGI(TAG, "Lowering bridge.");
-                    bridge_servo_down();
                     bridge_set_state(BRIDGE_LOWERING);
                 }
                 break;
 
             case BRIDGE_LOWERING:
                 if (bridge_switch_triggered(pins.bridge_sw_lowered_pin)) {
-                    bridge_servo_stop();
                     ESP_LOGI(TAG, "Bottom limit reached. Settling...");
                     bridge_set_state(BRIDGE_AFTER_LOWERED);
                 }
@@ -1351,7 +1322,7 @@ void bridge_task(void *pvParameters) {
                 break;
 
             case BRIDGE_OPEN_TRAFFIC:
-                if (bridge_boat_present()) {
+                if (bridge_boat_present() || bridge_boat2_present()) {
                     bridge_led_warning();
                     ESP_LOGI(TAG, "New boat present — cycling again.");
                     bridge_set_state(BRIDGE_WARN_TRAFFIC);
@@ -1739,7 +1710,7 @@ static esp_err_t bridge_status_handler(httpd_req_t *req) {
     cJSON_AddBoolToObject(root, "boat_present", bridge_boat_present());
     cJSON_AddBoolToObject(root, "switch_lowered", bridge_switch_triggered(pins.bridge_sw_lowered_pin));
     cJSON_AddBoolToObject(root, "switch_raised", bridge_switch_triggered(pins.bridge_sw_raised_pin));
-    cJSON_AddNumberToObject(root, "car_distance", bridge_ping_cm(pins.bridge_car_trig_pin, pins.bridge_car_echo_pin));
+    cJSON_AddNumberToObject(root, "boat2_distance", bridge_ping_cm(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin));
     cJSON_AddNumberToObject(root, "boat_distance", bridge_ping_cm(pins.bridge_boat_trig_pin, pins.bridge_boat_echo_pin));
     
     // Add calibration status
@@ -1796,6 +1767,8 @@ static esp_err_t bridge_status_handler(httpd_req_t *req) {
     cJSON_AddBoolToObject(root, "car_detection_enabled", car_detection_enabled);
     // Detection meter for UI
     cJSON_AddNumberToObject(root, "detection_meter", boat_detection_meter);
+    // Which sensor first detected the approaching boat (0=none, 1=boat1, 2=boat2)
+    cJSON_AddNumberToObject(root, "boat_initial_sensor", boat_initial_sensor);
 
     const char *json_string = cJSON_Print(root);
     httpd_resp_set_type(req, "application/json");
@@ -1849,17 +1822,13 @@ static esp_err_t bridge_control_handler(httpd_req_t *req) {
         char param[32];
         if (httpd_query_key_value(buf, "action", param, sizeof(param)) == ESP_OK) {
             if (strcmp(param, "stop") == 0) {
-                bridge_servo_stop();
                 ESP_LOGI(TAG, "Bridge manual control: STOP");
             } else if (strcmp(param, "up") == 0) {
-                bridge_servo_up();
                 ESP_LOGI(TAG, "Bridge manual control: UP");
             } else if (strcmp(param, "down") == 0) {
-                bridge_servo_down();
                 ESP_LOGI(TAG, "Bridge manual control: DOWN");
             } else if (strcmp(param, "reset") == 0) {
                 bridge_manual_override = false;
-                bridge_servo_stop();
                 bridge_set_state(BRIDGE_ARMED);
                 ESP_LOGI(TAG, "Bridge manual control: RESET to auto");
             }
@@ -2075,14 +2044,15 @@ static esp_err_t sensor_data_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-// === CAR SENSOR CALIBRATION API HANDLERS ===
+// === BOAT2 SENSOR CALIBRATION API HANDLERS ===
 
-static esp_err_t car_calibration_start_handler(httpd_req_t *req) {
-    start_car_calibration();
+static esp_err_t boat2_calibration_start_handler(httpd_req_t *req) {
+    // Start calibration for the second boat ultrasonic
+    start_boat2_calibration();
     
     cJSON *root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "success", true);
-    cJSON_AddStringToObject(root, "message", "Car sensor calibration started");
+    cJSON_AddStringToObject(root, "message", "Boat2 sensor calibration started");
     cJSON_AddStringToObject(root, "state", "in_progress");
     
     const char *json_string = cJSON_Print(root);
@@ -2094,12 +2064,12 @@ static esp_err_t car_calibration_start_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-static esp_err_t car_calibration_status_handler(httpd_req_t *req) {
+static esp_err_t boat2_calibration_status_handler(httpd_req_t *req) {
     cJSON *root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "success", true);
     
     const char *state_str;
-    switch (car_calib_state) {
+    switch (boat2_calib_state) {
         case CALIB_IDLE: state_str = "idle"; break;
         case CALIB_IN_PROGRESS: state_str = "in_progress"; break;
         case CALIB_COMPLETE: state_str = "complete"; break;
@@ -2107,17 +2077,17 @@ static esp_err_t car_calibration_status_handler(httpd_req_t *req) {
     }
     cJSON_AddStringToObject(root, "state", state_str);
     
-    if (car_calib_state == CALIB_IN_PROGRESS) {
-        cJSON_AddNumberToObject(root, "samples_collected", car_calib_sample_count);
+    if (boat2_calib_state == CALIB_IN_PROGRESS) {
+        cJSON_AddNumberToObject(root, "samples_collected", boat2_calib_sample_count);
         cJSON_AddNumberToObject(root, "total_samples", BASELINE_SAMPLES);
-        cJSON_AddNumberToObject(root, "progress_percent", (car_calib_sample_count * 100) / BASELINE_SAMPLES);
-    } else if (car_calib_state == CALIB_COMPLETE) {
-        cJSON_AddNumberToObject(root, "baseline_mean", car_baseline_mean);
-        cJSON_AddNumberToObject(root, "baseline_stddev", car_baseline_stddev);
+        cJSON_AddNumberToObject(root, "progress_percent", (boat2_calib_sample_count * 100) / BASELINE_SAMPLES);
+    } else if (boat2_calib_state == CALIB_COMPLETE) {
+        cJSON_AddNumberToObject(root, "baseline_mean", boat2_baseline_mean);
+        cJSON_AddNumberToObject(root, "baseline_stddev", boat2_baseline_stddev);
         cJSON_AddNumberToObject(root, "threshold_cm", THRESHOLD_CM);
         cJSON_AddNumberToObject(root, "required_consecutive", REQUIRED_CONSECUTIVE);
         cJSON_AddNumberToObject(root, "reset_consecutive", RESET_CONSECUTIVE);
-        cJSON_AddBoolToObject(root, "car_detected", car_detected);
+        cJSON_AddBoolToObject(root, "boat2_detected", boat2_detected);
     }
     
     const char *json_string = cJSON_Print(root);
@@ -2129,25 +2099,25 @@ static esp_err_t car_calibration_status_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-static esp_err_t car_calibration_reset_handler(httpd_req_t *req) {
+static esp_err_t boat2_calibration_reset_handler(httpd_req_t *req) {
     // Reset calibration state
-    car_calib_state = CALIB_IDLE;
-    car_baseline_mean = 0.0;
-    car_baseline_stddev = 0.0;
-    car_calib_sample_count = 0;
-    car_consecutive_detections = 0;
-    car_consecutive_clear = 0;
-    car_detected = false;
+    boat2_calib_state = CALIB_IDLE;
+    boat2_baseline_mean = 0.0;
+    boat2_baseline_stddev = 0.0;
+    boat2_calib_sample_count = 0;
+    boat2_consecutive_detections = 0;
+    boat2_consecutive_clear = 0;
+    boat2_detected = false;
     
     // Clear data buffers
-    car_reading_index = 0;
-    car_readings_count = 0;
+    boat2_reading_index = 0;
+    boat2_readings_count = 0;
     
-    ESP_LOGI(TAG, "Car sensor calibration reset");
+    ESP_LOGI(TAG, "Boat2 sensor calibration reset");
     
     cJSON *root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "success", true);
-    cJSON_AddStringToObject(root, "message", "Car sensor calibration reset");
+    cJSON_AddStringToObject(root, "message", "Boat2 sensor calibration reset");
     cJSON_AddStringToObject(root, "state", "idle");
     
     const char *json_string = cJSON_Print(root);
@@ -2159,36 +2129,36 @@ static esp_err_t car_calibration_reset_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-static esp_err_t car_sensor_data_handler(httpd_req_t *req) {
+static esp_err_t boat2_sensor_data_handler(httpd_req_t *req) {
     cJSON *root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "success", true);
     
-    // Get current car distance
-    float car_distance = measure_distance(pins.bridge_car_trig_pin, pins.bridge_car_echo_pin);
+    // Get current boat2 distance (repurposed from former boat2 ultrasonic)
+    float boat2_distance = measure_distance(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin);
+
+    // Add current reading info (represents boat2 sensor)
+    cJSON_AddNumberToObject(root, "current_distance", boat2_distance);
+    cJSON_AddBoolToObject(root, "calibrated", boat2_calib_state == CALIB_COMPLETE);
     
-    // Add current reading info
-    cJSON_AddNumberToObject(root, "current_distance", car_distance);
-    cJSON_AddBoolToObject(root, "calibrated", car_calib_state == CALIB_COMPLETE);
-    
-    if (car_calib_state == CALIB_COMPLETE) {
-        cJSON_AddNumberToObject(root, "baseline_mean", car_baseline_mean);
-        cJSON_AddNumberToObject(root, "threshold_distance", car_baseline_mean - THRESHOLD_CM);
-        cJSON_AddBoolToObject(root, "car_detected", car_detected);
+    if (boat2_calib_state == CALIB_COMPLETE) {
+        cJSON_AddNumberToObject(root, "baseline_mean", boat2_baseline_mean);
+        cJSON_AddNumberToObject(root, "threshold_distance", boat2_baseline_mean - THRESHOLD_CM);
+        cJSON_AddBoolToObject(root, "boat2_detected", boat2_detected);
     }
     
     // Add buffered readings for charting
     cJSON *readings_array = cJSON_CreateArray();
     cJSON *timestamps_array = cJSON_CreateArray();
     
-    for (int i = 0; i < car_readings_count; i++) {
-        int idx = (car_reading_index + i) % MAX_SENSOR_READINGS;
-        cJSON_AddItemToArray(readings_array, cJSON_CreateNumber(car_sensor_readings[idx]));
-        cJSON_AddItemToArray(timestamps_array, cJSON_CreateNumber(car_reading_timestamps[idx]));
+    for (int i = 0; i < boat2_readings_count; i++) {
+        int idx = (boat2_reading_index + i) % MAX_SENSOR_READINGS;
+        cJSON_AddItemToArray(readings_array, cJSON_CreateNumber(boat2_sensor_readings[idx]));
+        cJSON_AddItemToArray(timestamps_array, cJSON_CreateNumber(boat2_reading_timestamps[idx]));
     }
     
     cJSON_AddItemToObject(root, "readings", readings_array);
     cJSON_AddItemToObject(root, "timestamps", timestamps_array);
-    cJSON_AddNumberToObject(root, "count", car_readings_count);
+    cJSON_AddNumberToObject(root, "count", boat2_readings_count);
     
     const char *json_string = cJSON_Print(root);
     httpd_resp_set_type(req, "application/json");
@@ -2225,6 +2195,11 @@ esp_err_t sse_handler(httpd_req_t *req) {
         cJSON_AddStringToObject(root, "state", bridge_state_name(bridge_state));
         cJSON_AddBoolToObject(root, "boat_present", bridge_boat_present());
         cJSON_AddNumberToObject(root, "boat_distance", bridge_ping_cm(pins.bridge_boat_trig_pin, pins.bridge_boat_echo_pin));
+        // Include repurposed second boat sensor (boat2) data for UI visibility
+        cJSON_AddBoolToObject(root, "boat2_present", bridge_boat2_present());
+        cJSON_AddNumberToObject(root, "boat2_distance", bridge_ping_cm(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin));
+        // Detection meter
+        cJSON_AddNumberToObject(root, "detection_meter", boat_detection_meter);
         cJSON_AddNumberToObject(root, "current_distance", current_distance);
         cJSON_AddBoolToObject(root, "calibrated", calib_state == CALIB_COMPLETE);
         
@@ -2358,11 +2333,10 @@ static esp_err_t pin_config_get_handler(httpd_req_t *req) {
     cJSON_AddNumberToObject(root, "motor_in1_pin", pins.motor_in1_pin);
     cJSON_AddNumberToObject(root, "motor_in2_pin", pins.motor_in2_pin);
     cJSON_AddNumberToObject(root, "motor_ena_pin", pins.motor_ena_pin);
-    cJSON_AddNumberToObject(root, "bridge_servo_pin", pins.bridge_servo_pin);
     cJSON_AddNumberToObject(root, "bridge_boat_trig_pin", pins.bridge_boat_trig_pin);
     cJSON_AddNumberToObject(root, "bridge_boat_echo_pin", pins.bridge_boat_echo_pin);
-    cJSON_AddNumberToObject(root, "bridge_car_trig_pin", pins.bridge_car_trig_pin);
-    cJSON_AddNumberToObject(root, "bridge_car_echo_pin", pins.bridge_car_echo_pin);
+    cJSON_AddNumberToObject(root, "bridge_boat2_trig_pin", pins.bridge_boat2_trig_pin);
+    cJSON_AddNumberToObject(root, "bridge_boat2_echo_pin", pins.bridge_boat2_echo_pin);
     cJSON_AddNumberToObject(root, "bridge_sw_lowered_pin", pins.bridge_sw_lowered_pin);
     cJSON_AddNumberToObject(root, "bridge_sw_raised_pin", pins.bridge_sw_raised_pin);
     cJSON_AddNumberToObject(root, "bridge_led_r_pin", pins.bridge_led_r_pin);
@@ -2421,20 +2395,17 @@ static esp_err_t pin_config_post_handler(httpd_req_t *req) {
     if ((pin_item = cJSON_GetObjectItem(json, "motor_ena_pin"))) {
         new_config.motor_ena_pin = pin_item->valueint;
     }
-    if ((pin_item = cJSON_GetObjectItem(json, "bridge_servo_pin"))) {
-        new_config.bridge_servo_pin = pin_item->valueint;
-    }
     if ((pin_item = cJSON_GetObjectItem(json, "bridge_boat_trig_pin"))) {
         new_config.bridge_boat_trig_pin = pin_item->valueint;
     }
     if ((pin_item = cJSON_GetObjectItem(json, "bridge_boat_echo_pin"))) {
         new_config.bridge_boat_echo_pin = pin_item->valueint;
     }
-    if ((pin_item = cJSON_GetObjectItem(json, "bridge_car_trig_pin"))) {
-        new_config.bridge_car_trig_pin = pin_item->valueint;
+    if ((pin_item = cJSON_GetObjectItem(json, "bridge_boat2_trig_pin"))) {
+        new_config.bridge_boat2_trig_pin = pin_item->valueint;
     }
-    if ((pin_item = cJSON_GetObjectItem(json, "bridge_car_echo_pin"))) {
-        new_config.bridge_car_echo_pin = pin_item->valueint;
+    if ((pin_item = cJSON_GetObjectItem(json, "bridge_boat2_echo_pin"))) {
+        new_config.bridge_boat2_echo_pin = pin_item->valueint;
     }
     if ((pin_item = cJSON_GetObjectItem(json, "bridge_sw_lowered_pin"))) {
         new_config.bridge_sw_lowered_pin = pin_item->valueint;
@@ -2535,10 +2506,10 @@ httpd_handle_t start_webserver(void) {
         {"/api/calibration/status", HTTP_GET, calibration_status_handler, NULL},
         {"/api/calibration/reset", HTTP_POST, calibration_reset_handler, NULL},
         {"/api/sensor/data", HTTP_GET, sensor_data_handler, NULL},
-        {"/api/car/calibration/start", HTTP_POST, car_calibration_start_handler, NULL},
-        {"/api/car/calibration/status", HTTP_GET, car_calibration_status_handler, NULL},
-        {"/api/car/calibration/reset", HTTP_POST, car_calibration_reset_handler, NULL},
-        {"/api/car/sensor/data", HTTP_GET, car_sensor_data_handler, NULL},
+        {"/api/boat2/calibration/start", HTTP_POST, boat2_calibration_start_handler, NULL},
+        {"/api/boat2/calibration/status", HTTP_GET, boat2_calibration_status_handler, NULL},
+        {"/api/boat2/calibration/reset", HTTP_POST, boat2_calibration_reset_handler, NULL},
+        {"/api/boat2/sensor/data", HTTP_GET, boat2_sensor_data_handler, NULL},
         {"/api/pin-config", HTTP_GET, pin_config_get_handler, NULL},
         {"/api/pin-config", HTTP_POST, pin_config_post_handler, NULL},
         {"/api/pin-config/reset", HTTP_POST, pin_config_reset_handler, NULL},
@@ -2598,8 +2569,8 @@ void app_main() {
     // Initialize bridge GPIO pins
     gpio_set_direction(pins.bridge_boat_trig_pin, GPIO_MODE_OUTPUT);
     gpio_set_direction(pins.bridge_boat_echo_pin, GPIO_MODE_INPUT);
-    gpio_set_direction(pins.bridge_car_trig_pin, GPIO_MODE_OUTPUT);
-    gpio_set_direction(pins.bridge_car_echo_pin, GPIO_MODE_INPUT);
+    gpio_set_direction(pins.bridge_boat2_trig_pin, GPIO_MODE_OUTPUT);
+    gpio_set_direction(pins.bridge_boat2_echo_pin, GPIO_MODE_INPUT);
     
     // Hall effect sensors - only set as GPIO input if not ADC pins
     adc_channel_t lowered_adc = gpio_to_adc_channel(pins.bridge_sw_lowered_pin);
@@ -2621,8 +2592,6 @@ void app_main() {
     // Initialize ADC for hall effect sensors
     init_adc_for_hall_sensors();
     
-    // Initialize bridge servo PWM
-    bridge_init_servo();
     bridge_led_off();
 
     // Install GPIO ISR service
