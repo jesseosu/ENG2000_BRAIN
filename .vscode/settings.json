@@ -4,5 +4,6 @@
         "stdio.h": "c",
         "adc_cali.h": "c",
         "ledc.h": "c"
-    }
+    },
+    "idf.port": "/dev/tty.usbserial-10"
 }

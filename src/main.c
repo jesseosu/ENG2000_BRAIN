@@ -123,6 +123,9 @@ static pin_config_t pins = {
 #define SAMPLE_INTERVAL_MS 120        // ms between detection samples
 #define MAX_SENSOR_READINGS 100       // buffer size for live graph data
 #define CALIB_SAMPLE_DELAY_MS 50      // Faster sampling during calibration
+// Hampel filter settings (outlier detection)
+#define HAMPEL_WINDOW 7               // number of historical points to consider
+#define HAMPEL_K 3.0f                 // threshold multiplier for MAD
 
 // Detection meter parameters (0-100)
 #define METER_MAX 100
@@ -199,6 +202,9 @@ static int boat2_readings_count = 0;
 // Boat detection meter (0-100) and timing for decay
 static int boat_detection_meter = 0;
 static uint32_t last_meter_update_ms = 0;
+// Boat2 detection meter and timing
+static int boat2_detection_meter = 0;
+static uint32_t last_boat2_meter_update_ms = 0;
 
 // Which sensor first saw the boat during an approach: 0=unknown, 1=boat1, 2=boat2
 static int boat_initial_sensor = 0;
@@ -248,6 +254,9 @@ void wifi_init_softap(void);
 httpd_handle_t start_webserver(void);
 float measure_distance(gpio_num_t trig_pin, gpio_num_t echo_pin);
 void sse_task(void *pvParameters);
+// Filtering helpers
+float get_filtered_distance_for(gpio_num_t trig_pin, gpio_num_t echo_pin);
+float apply_hampel_history(float value, float *history_buf, int history_count, int history_index);
 
 // Pin management functions
 esp_err_t load_pin_config(void);
@@ -477,7 +486,7 @@ int read_hall_sensor_mv(gpio_num_t gpio_pin) {
     adc_reading /= successful_reads;
     
     // Log raw ADC value for debugging
-    ESP_LOGI(TAG, "GPIO%d: Raw ADC = %lu (from %d samples)", gpio_pin, adc_reading, successful_reads);
+    // ESP_LOGI(TAG, "GPIO%d: Raw ADC = %lu (from %d samples)", gpio_pin, adc_reading, successful_reads);
 
     // Convert to voltage if calibration is available
     if (adc1_cali_handle != NULL) {
@@ -491,7 +500,7 @@ int read_hall_sensor_mv(gpio_num_t gpio_pin) {
     // Fallback: simple linear conversion for ADC_ATTEN_DB_11 (0-3.1V range)
     // int voltage = (adc_reading * 3100) / 4095;  // Changed from 3300 to 3100 for DB_11 attenuation
     int voltage = adc_reading;
-    ESP_LOGI(TAG, "GPIO%d: Converted voltage = %d mV", gpio_pin, voltage);
+    // ESP_LOGI(TAG, "GPIO%d: Converted voltage = %d mV", gpio_pin, voltage);
     return voltage;
 }
 
@@ -513,6 +522,67 @@ float median_filter(float arr[], int n) {
         temp[j + 1] = key;
     }
     return temp[n / 2];
+}
+
+// Generic filtered distance for any trig/echo pair using median of quick samples
+float get_filtered_distance_for(gpio_num_t trig_pin, gpio_num_t echo_pin) {
+    float samples[MEDIAN_SAMPLES];
+    int valid_count = 0;
+
+    for (int i = 0; i < MEDIAN_SAMPLES; i++) {
+        float r = measure_distance(trig_pin, echo_pin);
+        if (r >= 0.0f && r < 1000.0f) {
+            samples[valid_count++] = r;
+        }
+        // short delay between sub-samples
+        vTaskDelay(5 / portTICK_PERIOD_MS);
+    }
+
+    if (valid_count == 0) {
+        return -1.0; // timeout/no valid echoes
+    }
+
+    return median_filter(samples, valid_count);
+}
+
+// Compute median absolute deviation (MAD) for window
+static float compute_mad(float arr[], int n, float med) {
+    if (n <= 0) return 0.0f;
+    float devs[n];
+    for (int i = 0; i < n; i++) devs[i] = fabsf(arr[i] - med);
+    return median_filter(devs, n);
+}
+
+// Hampel filter applied using history buffer (history contains past readings, newest at history_index-1)
+float apply_hampel_history(float value, float *history_buf, int history_count, int history_index) {
+    // Build window of up to HAMPEL_WINDOW previous valid values (exclude current 'value')
+    float window[HAMPEL_WINDOW];
+    int found = 0;
+    int idx = history_index - 1;
+    if (idx < 0 && history_count > 0) idx += MAX_SENSOR_READINGS;
+
+    for (int i = 0; i < history_count && found < HAMPEL_WINDOW; i++) {
+        int pos = (idx - i + MAX_SENSOR_READINGS) % MAX_SENSOR_READINGS;
+        float v = history_buf[pos];
+        if (v >= 0.0f && v < 1000.0f) {
+            window[found++] = v;
+        }
+    }
+
+    if (found == 0) return value; // no history to compare
+
+    float med = median_filter(window, found);
+    float mad = compute_mad(window, found, med);
+
+    // If mad is zero (all values identical), fall back to small epsilon
+    if (mad <= 0.0f) mad = 0.0001f;
+
+    float threshold = HAMPEL_K * mad;
+    if (fabsf(value - med) > threshold) {
+        // Outlier — replace with median (conservative)
+        return med;
+    }
+    return value;
 }
 
 // Get filtered distance reading using median filter (for boat sensor)
@@ -789,23 +859,37 @@ bool detect_boat2_calibrated(float distance) {
 
 // Ultrasonic sensor measurement function
 float measure_distance(gpio_num_t trig_pin, gpio_num_t echo_pin) {
-    // Debug: Check pin configuration
+    // Robust implementation based on busy-wait timing (microsecond accuracy)
     ESP_LOGD(TAG, "Ultrasonic: TRIG=%d, ECHO=%d", trig_pin, echo_pin);
-    
-    // Send trigger pulse
+
+    // If echo line is HIGH before we start, wait briefly for it to go LOW.
+    // Some modules or wiring can leave the line high; give it a short chance to clear.
+    const int64_t PRE_TRIGGER_WAIT_US = 200000; // 200 ms
+    int64_t pre_start = esp_timer_get_time();
+    while (gpio_get_level(echo_pin) != 0) {
+        if ((esp_timer_get_time() - pre_start) > PRE_TRIGGER_WAIT_US) {
+            ESP_LOGW(TAG, "Ultrasonic echo line stuck HIGH before trigger (pin %d)", echo_pin);
+            return -1.0;
+        }
+        // small busy-wait to avoid tight spin
+        int64_t _tmp = esp_timer_get_time();
+        while (esp_timer_get_time() - _tmp < 50) { }
+    }
+
+    // Send trigger pulse (10 us)
     gpio_set_level(trig_pin, 0);
-    vTaskDelay(2 / portTICK_PERIOD_MS);
+    int64_t ttmp = esp_timer_get_time();
+    while (esp_timer_get_time() - ttmp < 2) { }
     gpio_set_level(trig_pin, 1);
-    vTaskDelay(10 / portTICK_PERIOD_MS);
+    int64_t t0 = esp_timer_get_time();
+    while (esp_timer_get_time() - t0 < 10) { }
     gpio_set_level(trig_pin, 0);
 
-    // Wait for echo start
-    int64_t start_time = esp_timer_get_time();
-    int echo_level = gpio_get_level(echo_pin);
-    ESP_LOGD(TAG, "Initial echo level: %d", echo_level);
-    
+    // Wait for echo rising edge
+    int64_t start_wait = esp_timer_get_time();
+    const int64_t START_TIMEOUT_US = 30000; // 30 ms
     while (gpio_get_level(echo_pin) == 0) {
-        if (esp_timer_get_time() - start_time > 30000) { // Reduced timeout: 30ms
+        if ((esp_timer_get_time() - start_wait) > START_TIMEOUT_US) {
             int64_t now_us = esp_timer_get_time();
             if (now_us - last_ultrasonic_warn_time_us > (int64_t)ULTRASONIC_WARN_RATE_MS * 1000) {
                 ESP_LOGW(TAG, "Ultrasonic timeout waiting for echo start (pins %d,%d)", trig_pin, echo_pin);
@@ -814,12 +898,12 @@ float measure_distance(gpio_num_t trig_pin, gpio_num_t echo_pin) {
             return -1.0;
         }
     }
-
     int64_t echo_start = esp_timer_get_time();
 
-    // Wait for echo end
+    // Wait for echo falling edge
+    const int64_t END_TIMEOUT_US = 30000; // 30 ms
     while (gpio_get_level(echo_pin) == 1) {
-        if (esp_timer_get_time() - echo_start > 25000) { // 25ms timeout for echo
+        if ((esp_timer_get_time() - echo_start) > END_TIMEOUT_US) {
             int64_t now_us = esp_timer_get_time();
             if (now_us - last_ultrasonic_warn_time_us > (int64_t)ULTRASONIC_WARN_RATE_MS * 1000) {
                 ESP_LOGW(TAG, "Ultrasonic timeout waiting for echo end (pins %d,%d)", trig_pin, echo_pin);
@@ -828,13 +912,11 @@ float measure_distance(gpio_num_t trig_pin, gpio_num_t echo_pin) {
             return -1.0;
         }
     }
-    int64_t end_time = esp_timer_get_time();
+    int64_t echo_end = esp_timer_get_time();
 
-    // Calculate distance
-    int64_t pulse_duration = end_time - echo_start;
-    float distance = (pulse_duration * SOUND_SPEED) / 2.0;
-    
-    ESP_LOGD(TAG, "Pulse duration: %lld us, Distance: %.2f cm (pins %d,%d)", pulse_duration, distance, trig_pin, echo_pin);
+    int64_t pulse_duration = echo_end - echo_start; // microseconds
+    float distance = (pulse_duration * SOUND_SPEED) / 2.0f; // cm
+    ESP_LOGD(TAG, "Pulse duration: %lld us, Distance: %.2f cm (pins %d,%d)", (long long)pulse_duration, distance, trig_pin, echo_pin);
     return distance;
 }
 
@@ -936,14 +1018,42 @@ void ultrasonic_task(void *pvParameters) {
             if (now_ms2 < boat2_cooldown_until_ms) {
                 // Skipped due to cooldown
             } else {
-                // Regular boat2 sensor reading
-                    boat2_distance = measure_distance(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin);
+                // Regular boat2 sensor reading - use same filtering pipeline as boat1
+                boat2_distance = get_filtered_distance_for(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin);
 
-                if (boat2_distance > 0) {
-                        add_to_boat2_data_buffer(boat2_distance);
+                if (boat2_distance >= 0.0f) {
+                    add_to_boat2_data_buffer(boat2_distance);
                     // Update detection state (only when not calibrating)
-                        detect_boat2_calibrated(boat2_distance);
+                    detect_boat2_calibrated(boat2_distance);
                     boat2_timeout_streak = 0;
+
+                    // Update boat2 detection meter using the same logic as boat1
+                    uint32_t now_meter2_ms = esp_timer_get_time() / 1000;
+                    bool candidate2;
+                    if (boat2_calib_state == CALIB_COMPLETE) {
+                        float delta2 = boat2_baseline_mean - boat2_distance;
+                        candidate2 = (delta2 >= THRESHOLD_CM);
+                    } else {
+                        candidate2 = (boat2_distance <= BOAT_PRESENT_DIST_CM);
+                    }
+
+                    if (candidate2) {
+                        boat2_detection_meter += METER_INCREMENT;
+                        if (boat2_detection_meter > METER_MAX) boat2_detection_meter = METER_MAX;
+                        last_boat2_meter_update_ms = now_meter2_ms;
+                    } else {
+                        if (last_boat2_meter_update_ms == 0) last_boat2_meter_update_ms = now_meter2_ms;
+                        uint32_t elapsed_ms2 = now_meter2_ms - last_boat2_meter_update_ms;
+                        if (elapsed_ms2 > 0) {
+                            int decay2 = (METER_DECAY_PER_SEC * (int)elapsed_ms2) / 1000;
+                            if (decay2 > 0) {
+                                boat2_detection_meter -= decay2;
+                                if (boat2_detection_meter < 0) boat2_detection_meter = 0;
+                                last_boat2_meter_update_ms = now_meter2_ms;
+                            }
+                        }
+                    }
+
                 } else {
                     boat2_timeout_streak++;
                     if (boat2_timeout_streak >= ULTRASONIC_TIMEOUT_STREAK) {
@@ -1252,7 +1362,13 @@ void bridge_task(void *pvParameters) {
                     bridge_led_boat_go();
                     ESP_LOGI(TAG, "Top limit reached. Boat GREEN.");
                     bridge_set_state(BRIDGE_TOP_REACHED);
+                    motor_set_speed(0);
+                    motor_stop();
+                    break;
                 }
+                motor_set_direction(true); // Raise
+                motor_set_speed(60);
+                motor_start();
                 break;
 
             case BRIDGE_TOP_REACHED: {
@@ -1310,7 +1426,13 @@ void bridge_task(void *pvParameters) {
                 if (bridge_switch_triggered(pins.bridge_sw_lowered_pin)) {
                     ESP_LOGI(TAG, "Bottom limit reached. Settling...");
                     bridge_set_state(BRIDGE_AFTER_LOWERED);
+                    motor_set_speed(0);
+                    motor_stop();
+                    break;
                 }
+                motor_set_direction(false); // Lower
+                motor_set_speed(30);
+                motor_start();
                 break;
 
             case BRIDGE_AFTER_LOWERED:
@@ -1767,6 +1889,8 @@ static esp_err_t bridge_status_handler(httpd_req_t *req) {
     cJSON_AddBoolToObject(root, "car_detection_enabled", car_detection_enabled);
     // Detection meter for UI
     cJSON_AddNumberToObject(root, "detection_meter", boat_detection_meter);
+    // Detection meter for boat2 (separate)
+    cJSON_AddNumberToObject(root, "detection_meter_boat2", boat2_detection_meter);
     // Which sensor first detected the approaching boat (0=none, 1=boat1, 2=boat2)
     cJSON_AddNumberToObject(root, "boat_initial_sensor", boat_initial_sensor);
 
@@ -1823,10 +1947,17 @@ static esp_err_t bridge_control_handler(httpd_req_t *req) {
         if (httpd_query_key_value(buf, "action", param, sizeof(param)) == ESP_OK) {
             if (strcmp(param, "stop") == 0) {
                 ESP_LOGI(TAG, "Bridge manual control: STOP");
+                motor_stop();
             } else if (strcmp(param, "up") == 0) {
                 ESP_LOGI(TAG, "Bridge manual control: UP");
+                motor_set_direction(true); // Raise
+                motor_set_speed(motor_speed);
+                motor_start();
             } else if (strcmp(param, "down") == 0) {
                 ESP_LOGI(TAG, "Bridge manual control: DOWN");
+                motor_set_direction(false); // Lower
+                motor_set_speed(motor_speed);
+                motor_start();
             } else if (strcmp(param, "reset") == 0) {
                 bridge_manual_override = false;
                 bridge_set_state(BRIDGE_ARMED);
@@ -2011,6 +2142,7 @@ static esp_err_t sensor_data_handler(httpd_req_t *req) {
     // Add current reading info
     cJSON_AddNumberToObject(root, "current_distance", current_distance);
     cJSON_AddNumberToObject(root, "detection_meter", boat_detection_meter);
+    cJSON_AddNumberToObject(root, "detection_meter_boat2", boat2_detection_meter);
     cJSON_AddBoolToObject(root, "calibrated", calib_state == CALIB_COMPLETE);
     
     if (calib_state == CALIB_COMPLETE) {
@@ -2644,7 +2776,7 @@ void app_main() {
     // vTaskDelay(2000 / portTICK_PERIOD_MS);
 
     // Stop
-    motor_stop();
+    // motor_stop();
     // ESP_LOGI(TAG, "Motor test sequence completed");
 
     // Keep the main task alive

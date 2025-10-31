@@ -310,12 +310,20 @@
         </div>
 
         <div class="control-section">
-            <h3>🔔 Detection Meter</h3>
-            <p>Shows a smoothed detection confidence (0–100). Meter fills when candidate readings appear and decays over time.</p>
-            <div class="progress-bar" aria-label="Detection meter">
+            <h3>🔔 Detection Meters</h3>
+            <p>Shows a smoothed detection confidence (0–100) for each sensor. Meter fills when candidate readings appear and decays over time.</p>
+
+            <h4 style="margin:8px 0 4px 0;">Boat 1</h4>
+            <div class="progress-bar" aria-label="Boat 1 detection meter">
                 <div class="progress-fill" id="detectionMeterFill">0%</div>
             </div>
             <p id="detectionMeterText">Meter: <span id="detectionMeterPercent">0%</span></p>
+
+            <h4 style="margin:12px 0 4px 0;">Boat 2</h4>
+            <div class="progress-bar" aria-label="Boat 2 detection meter">
+                <div class="progress-fill" id="detectionMeterFillBoat2">0%</div>
+            </div>
+            <p id="detectionMeterTextBoat2">Meter: <span id="detectionMeterPercentBoat2">0%</span></p>
         </div>
 
         <div class="control-section">
@@ -326,6 +334,7 @@
             <div class="button-group">
                 <button id="toggleChart" class="btn-primary" onclick="toggleChart()">Start Live Chart</button>
                 <button id="clearChart" class="btn-secondary" onclick="clearChart()">Clear Data</button>
+                <button id="downloadLog" class="btn-success" onclick="downloadSensorLog()">Download CSV</button>
             </div>
         </div>
 
@@ -370,6 +379,7 @@
             <div class="button-group">
                 <button id="toggleBoat2Chart" class="btn-primary" onclick="toggleBoat2Chart()">Start Live Chart</button>
                 <button id="clearBoat2Chart" class="btn-secondary" onclick="clearBoat2Chart()">Clear Data</button>
+                <button id="downloadBoat2Log" class="btn-success" onclick="downloadBoat2Log()">Download CSV</button>
             </div>
         </div>
 
@@ -642,6 +652,32 @@
             if (meterPercentEl) meterPercentEl.textContent = pct + '%';
         }
 
+            // Update the boat2 detection meter UI (0-100)
+            function updateBoat2DetectionMeter(data) {
+                const meterVal = (data && typeof data.detection_meter_boat2 !== 'undefined') ? data.detection_meter_boat2 : null;
+                const meterFillEl = document.getElementById('detectionMeterFillBoat2');
+                const meterPercentEl = document.getElementById('detectionMeterPercentBoat2');
+                const meterTextEl = document.getElementById('detectionMeterTextBoat2');
+
+                if (meterVal === null) {
+                    if (meterFillEl) {
+                        meterFillEl.style.width = '0%';
+                        meterFillEl.textContent = 'N/A';
+                    }
+                    if (meterPercentEl) meterPercentEl.textContent = 'N/A';
+                    if (meterTextEl) meterTextEl.textContent = 'Meter: N/A';
+                    return;
+                }
+
+                const pct = Math.max(0, Math.min(100, Math.round(meterVal)));
+                if (meterFillEl) {
+                    meterFillEl.style.width = pct + '%';
+                    meterFillEl.textContent = pct + '%';
+                }
+                if (meterPercentEl) meterPercentEl.textContent = pct + '%';
+                if (meterTextEl) meterTextEl.textContent = 'Meter: ' + pct + '%';
+            }
+
         // Initialize Server-Sent Events connection
         function initSSE() {
             if (eventSource) {
@@ -664,8 +700,8 @@
                     document.getElementById('bridgeState').textContent = data.state || 'Unknown';
                     document.getElementById('boatPresent').textContent = data.boat_present ? 'YES' : 'NO';
                     document.getElementById('boatDistance').textContent = data.boat_distance ? data.boat_distance.toFixed(1) + ' cm' : 'N/A';
-                    // Update detection meter if provided via SSE
-                    try { updateDetectionMeter(data); } catch (e) { /* ignore */ }
+                    // Update detection meters if provided via SSE
+                    try { updateDetectionMeter(data); updateBoat2DetectionMeter(data); } catch (e) { /* ignore */ }
 
                     // Update initial boat sensor indicator (0=none, 1=boat1, 2=boat2)
                     try {
@@ -815,8 +851,8 @@
                         document.getElementById('enableBoat2Detect').disabled = data.boat2_detection_enabled;
                         document.getElementById('disableBoat2Detect').disabled = !data.boat2_detection_enabled;
                     }
-                    // Update detection meter (from bridge status JSON)
-                    try { updateDetectionMeter(data); } catch (e) { /* ignore */ }
+                    // Update detection meters (from bridge status JSON)
+                    try { updateDetectionMeter(data); updateBoat2DetectionMeter(data); } catch (e) { /* ignore */ }
                     // Update initial boat sensor indicator (0=none, 1=boat1, 2=boat2)
                     try {
                         const bisEl = document.getElementById('boatInitialSensor');
@@ -1111,6 +1147,72 @@
             if (boat2SensorChart) {
                 boat2SensorChart.update();
             }
+        }
+
+        // Download sensor data as CSV client-side by fetching the server JSON
+        function buildCSVFromSensorData(obj, isBoat2) {
+            // Metadata header lines (start with #) for quick inspection
+            const lines = [];
+            const downloadedAt = new Date().toISOString();
+            lines.push(`# downloaded_at,${downloadedAt}`);
+            if (typeof obj.calibrated !== 'undefined') lines.push(`# calibrated,${obj.calibrated}`);
+            if (typeof obj.baseline_mean !== 'undefined') lines.push(`# baseline_mean,${obj.baseline_mean}`);
+            if (typeof obj.threshold_distance !== 'undefined') lines.push(`# threshold_distance,${obj.threshold_distance}`);
+            if (typeof obj.detection_meter !== 'undefined') lines.push(`# detection_meter,${obj.detection_meter}`);
+            if (typeof obj.detection_meter_boat2 !== 'undefined') lines.push(`# detection_meter_boat2,${obj.detection_meter_boat2}`);
+            lines.push('index,timestamp_ms,distance_cm');
+
+            const readings = obj.readings || [];
+            const timestamps = obj.timestamps || [];
+            for (let i = 0; i < readings.length; i++) {
+                const ts = (i < timestamps.length) ? timestamps[i] : '';
+                const val = readings[i];
+                lines.push([i, ts, (typeof val === 'number' ? val.toFixed(2) : '')].join(','));
+            }
+
+            return lines.join('\n');
+        }
+
+        function downloadSensorLog() {
+            fetch('/api/sensor/data')
+                .then(resp => resp.json())
+                .then(obj => {
+                    const csv = buildCSVFromSensorData(obj, false);
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `boat_sensor_log_${Date.now()}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                })
+                .catch(err => {
+                    console.error('Failed to download sensor data:', err);
+                    alert('Failed to download sensor data');
+                });
+        }
+
+        function downloadBoat2Log() {
+            fetch('/api/boat2/sensor/data')
+                .then(resp => resp.json())
+                .then(obj => {
+                    const csv = buildCSVFromSensorData(obj, true);
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `boat2_sensor_log_${Date.now()}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                })
+                .catch(err => {
+                    console.error('Failed to download boat2 data:', err);
+                    alert('Failed to download boat2 data');
+                });
         }
 
         function toggleOverride(enable) {
