@@ -1366,7 +1366,7 @@ void bridge_task(void *pvParameters) {
                     motor_stop();
                     break;
                 }
-                motor_set_direction(true); // Raise
+                motor_set_direction(false); // Raise
                 motor_set_speed(60);
                 motor_start();
                 break;
@@ -1430,7 +1430,7 @@ void bridge_task(void *pvParameters) {
                     motor_stop();
                     break;
                 }
-                motor_set_direction(false); // Lower
+                motor_set_direction(true); // Lower
                 motor_set_speed(30);
                 motor_start();
                 break;
