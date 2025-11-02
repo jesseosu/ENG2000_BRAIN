@@ -40,9 +40,14 @@ typedef struct {
     gpio_num_t bridge_boat2_echo_pin;
     gpio_num_t bridge_sw_lowered_pin;
     gpio_num_t bridge_sw_raised_pin;
-    gpio_num_t bridge_led_r_pin;
-    gpio_num_t bridge_led_g_pin;
-    gpio_num_t bridge_led_b_pin;
+    // Car Traffic LED system (RGB)
+    gpio_num_t car_traffic_led_r_pin;
+    gpio_num_t car_traffic_led_g_pin;
+    gpio_num_t car_traffic_led_b_pin;
+    // Boat Traffic LED system (RGB)
+    gpio_num_t boat_traffic_led_r_pin;
+    gpio_num_t boat_traffic_led_g_pin;
+    gpio_num_t boat_traffic_led_b_pin;
 } pin_config_t;
 
 // Default pin configuration
@@ -61,9 +66,12 @@ static pin_config_t default_pins = {
     .bridge_boat2_echo_pin = GPIO_NUM_19,
     .bridge_sw_lowered_pin = GPIO_NUM_21,
     .bridge_sw_raised_pin = GPIO_NUM_22,
-    .bridge_led_r_pin = GPIO_NUM_16,
-    .bridge_led_g_pin = GPIO_NUM_17,
-    .bridge_led_b_pin = GPIO_NUM_23
+    .car_traffic_led_r_pin = GPIO_NUM_16,
+    .car_traffic_led_g_pin = GPIO_NUM_17,
+    .car_traffic_led_b_pin = GPIO_NUM_23,
+    .boat_traffic_led_r_pin = GPIO_NUM_25,
+    .boat_traffic_led_g_pin = GPIO_NUM_0,
+    .boat_traffic_led_b_pin = GPIO_NUM_15
 };
 
 // Current active pin configuration
@@ -82,9 +90,12 @@ static pin_config_t pins = {
     .bridge_boat2_echo_pin = GPIO_NUM_19,
     .bridge_sw_lowered_pin = GPIO_NUM_21,
     .bridge_sw_raised_pin = GPIO_NUM_22,
-    .bridge_led_r_pin = GPIO_NUM_16,
-    .bridge_led_g_pin = GPIO_NUM_17,
-    .bridge_led_b_pin = GPIO_NUM_23
+    .car_traffic_led_r_pin = GPIO_NUM_16,
+    .car_traffic_led_g_pin = GPIO_NUM_17,
+    .car_traffic_led_b_pin = GPIO_NUM_23,
+    .boat_traffic_led_r_pin = GPIO_NUM_25,
+    .boat_traffic_led_g_pin = GPIO_NUM_0,
+    .boat_traffic_led_b_pin = GPIO_NUM_15
 };
 
 // NVS storage key
@@ -233,11 +244,17 @@ static bool bridge_top_saw_gap = false;
 static uint32_t bridge_top_enter_time = 0;
 static bool bridge_manual_override = false;
 static TaskHandle_t bridge_task_handle = NULL;
+static uint32_t boat_led_blink_last_toggle = 0;
 
 // LED state variables for status reporting
-static bool led_r_state = false;
-static bool led_g_state = false;
-static bool led_b_state = false;
+// Car Traffic LED states
+static bool car_led_r_state = false;
+static bool car_led_g_state = false;
+static bool car_led_b_state = false;
+// Boat Traffic LED states
+static bool boat_led_r_state = false;
+static bool boat_led_g_state = false;
+static bool boat_led_b_state = false;
 static bool car_detection_enabled = false;
 
 // Hall effect sensor threshold (in ADC raw value)
@@ -345,7 +362,8 @@ bool has_pin_conflicts(pin_config_t* config) {
         config->bridge_boat_trig_pin, config->bridge_boat_echo_pin,
         config->bridge_boat2_trig_pin, config->bridge_boat2_echo_pin,
         config->bridge_sw_lowered_pin, config->bridge_sw_raised_pin,
-        config->bridge_led_r_pin, config->bridge_led_g_pin, config->bridge_led_b_pin
+        config->car_traffic_led_r_pin, config->car_traffic_led_g_pin, config->car_traffic_led_b_pin,
+        config->boat_traffic_led_r_pin, config->boat_traffic_led_g_pin, config->boat_traffic_led_b_pin
     };
     
     int num_pins = sizeof(pins_array) / sizeof(pins_array[0]);
@@ -371,7 +389,8 @@ bool validate_pin_config(pin_config_t* config, char* error_msg, size_t error_len
         config->bridge_boat_trig_pin, config->bridge_boat_echo_pin,
         config->bridge_boat2_trig_pin, config->bridge_boat2_echo_pin,
         config->bridge_sw_lowered_pin, config->bridge_sw_raised_pin,
-        config->bridge_led_r_pin, config->bridge_led_g_pin, config->bridge_led_b_pin
+        config->car_traffic_led_r_pin, config->car_traffic_led_g_pin, config->car_traffic_led_b_pin,
+        config->boat_traffic_led_r_pin, config->boat_traffic_led_g_pin, config->boat_traffic_led_b_pin
     };
     
     int num_pins = sizeof(pins_to_check) / sizeof(pins_to_check[0]);
@@ -1198,23 +1217,48 @@ void motor_task(void *pvParameters) {
     }
 }
 
-// Bridge control functions
-void bridge_rgb(bool r, bool g, bool b) {
-    led_r_state = r;
-    led_g_state = g;
-    led_b_state = b;
+// Bridge LED control functions
+// Car Traffic LED functions
+void car_traffic_led_rgb(bool r, bool g, bool b) {
+    car_led_r_state = r;
+    car_led_g_state = g;
+    car_led_b_state = b;
     // For common cathode RGB LED: cathode to GND, anodes to pins
     // Set pin HIGH to turn on (source current to anode), LOW to turn off
-    gpio_set_level(pins.bridge_led_r_pin, r);
-    gpio_set_level(pins.bridge_led_g_pin, g);
-    gpio_set_level(pins.bridge_led_b_pin, b);
+    gpio_set_level(pins.car_traffic_led_r_pin, r);
+    gpio_set_level(pins.car_traffic_led_g_pin, g);
+    gpio_set_level(pins.car_traffic_led_b_pin, b);
 }
 
-void bridge_led_traffic_go() { bridge_rgb(false, true, false); }
-void bridge_led_warning() { bridge_rgb(true, true, false); }
-void bridge_led_boat_go() { bridge_rgb(false, false, true); }
-void bridge_led_stop() { bridge_rgb(true, false, false); }
-void bridge_led_off() { bridge_rgb(false, false, false); }
+void car_traffic_led_green() { car_traffic_led_rgb(false, true, false); }
+void car_traffic_led_yellow() { car_traffic_led_rgb(true, true, false); }
+void car_traffic_led_red() { car_traffic_led_rgb(true, false, false); }
+void car_traffic_led_off() { car_traffic_led_rgb(false, false, false); }
+
+// Boat Traffic LED functions
+void boat_traffic_led_rgb(bool r, bool g, bool b) {
+    boat_led_r_state = r;
+    boat_led_g_state = g;
+    boat_led_b_state = b;
+    // For common cathode RGB LED: cathode to GND, anodes to pins
+    // Set pin HIGH to turn on (source current to anode), LOW to turn off
+    gpio_set_level(pins.boat_traffic_led_r_pin, r);
+    gpio_set_level(pins.boat_traffic_led_g_pin, g);
+    gpio_set_level(pins.boat_traffic_led_b_pin, b);
+}
+
+void boat_traffic_led_green() { boat_traffic_led_rgb(false, true, false); }
+void boat_traffic_led_yellow() { boat_traffic_led_rgb(true, true, false); }
+void boat_traffic_led_red() { boat_traffic_led_rgb(true, false, false); }
+void boat_traffic_led_off() { boat_traffic_led_rgb(false, false, false); }
+
+// Legacy functions for backward compatibility (now control car traffic LED)
+void bridge_rgb(bool r, bool g, bool b) { car_traffic_led_rgb(r, g, b); }
+void bridge_led_traffic_go() { car_traffic_led_green(); }
+void bridge_led_warning() { car_traffic_led_yellow(); }
+void bridge_led_boat_go() { boat_traffic_led_green(); }
+void bridge_led_stop() { car_traffic_led_red(); }
+void bridge_led_off() { car_traffic_led_off(); }
 
 bool bridge_switch_triggered(gpio_num_t pin) {
     // Use adjustable threshold for hall effect sensor
@@ -1305,11 +1349,16 @@ void bridge_task(void *pvParameters) {
                 bool boat_ok = (bridge_ping_cm(pins.bridge_boat_trig_pin, pins.bridge_boat_echo_pin) < 9999);
                 bool boat2_ok = (bridge_ping_cm(pins.bridge_boat2_trig_pin, pins.bridge_boat2_echo_pin) < 9999);
 
-                if (((current_time / 300) % 2) == 0) bridge_led_warning();
-                else bridge_led_off();
+                // Both LED systems: Yellow (blinking)
+                if (((current_time / 300) % 2) == 0) {
+                    car_traffic_led_yellow();
+                    boat_traffic_led_yellow();
+                } else {
+                    car_traffic_led_off();
+                    boat_traffic_led_off();
+                }
 
                 if (boat_ok && boat2_ok && (current_time - bridge_state_start) > 1200) {
-                    bridge_led_traffic_go();
                     ESP_LOGI(TAG, "Bridge self-test OK. System ARMED.");
                     bridge_set_state(BRIDGE_ARMED);
                 }
@@ -1318,16 +1367,18 @@ void bridge_task(void *pvParameters) {
 
             case BRIDGE_ARMED:
                 {
+                    // Car Traffic: Green, Boat Traffic: Red
+                    car_traffic_led_green();
+                    boat_traffic_led_red();
+                    
                     // Check both boat sensors (primary and boat2). The sensor that first sees the boat
                     // is recorded in boat_initial_sensor to guide the TOP->pre-lower sequencing.
                     if (bridge_boat_present()) {
                         boat_initial_sensor = 1;
-                        bridge_led_warning();
                         ESP_LOGI(TAG, "Boat detected by sensor1: WARN_TRAFFIC.");
                         bridge_set_state(BRIDGE_WARN_TRAFFIC);
                     } else if (bridge_boat2_present()) {
                         boat_initial_sensor = 2;
-                        bridge_led_warning();
                         ESP_LOGI(TAG, "Boat detected by sensor2: WARN_TRAFFIC.");
                         bridge_set_state(BRIDGE_WARN_TRAFFIC);
                     }
@@ -1335,14 +1386,21 @@ void bridge_task(void *pvParameters) {
                 break;
 
             case BRIDGE_WARN_TRAFFIC:
+                // Car Traffic: Yellow, Boat Traffic: Red
+                car_traffic_led_yellow();
+                boat_traffic_led_red();
+                
                 if ((current_time - bridge_state_start) >= T_WARN_TRAFFIC) {
-                    bridge_led_stop();
                     ESP_LOGI(TAG, "Traffic RED. Preparing to raise.");
                     bridge_set_state(BRIDGE_WAIT_STOP);
                 }
                 break;
 
             case BRIDGE_WAIT_STOP:
+                // Car Traffic: Red, Boat Traffic: Red
+                car_traffic_led_red();
+                boat_traffic_led_red();
+                
                 if ((current_time - bridge_state_start) >= T_AFTER_STOP) {
                     ESP_LOGI(TAG, "Checking deck clear (cars/peds).");
                     bridge_set_state(BRIDGE_CHECK_CLEAR);
@@ -1350,17 +1408,23 @@ void bridge_task(void *pvParameters) {
                 break;
 
             case BRIDGE_CHECK_CLEAR:
+                // Car Traffic: Red, Boat Traffic: Green
+                car_traffic_led_red();
+                boat_traffic_led_green();
+                
                 if (!bridge_car_on_bridge()) {
                     ESP_LOGI(TAG, "Deck clear. Raising bridge.");
-                    bridge_led_stop();
                     bridge_set_state(BRIDGE_RAISING);
                 }
                 break;
 
             case BRIDGE_RAISING:
+                // Car Traffic: Red, Boat Traffic: Red
+                car_traffic_led_red();
+                boat_traffic_led_red();
+                
                 if (bridge_switch_triggered(pins.bridge_sw_raised_pin)) {
-                    bridge_led_boat_go();
-                    ESP_LOGI(TAG, "Top limit reached. Boat GREEN.");
+                    ESP_LOGI(TAG, "Top limit reached.");
                     bridge_set_state(BRIDGE_TOP_REACHED);
                     motor_set_speed(0);
                     motor_stop();
@@ -1375,9 +1439,12 @@ void bridge_task(void *pvParameters) {
                 bool boat1_present = bridge_boat_present();
                 bool boat2_present = bridge_boat2_present();
 
+                // Car Traffic: Red, Boat Traffic: Red
+                car_traffic_led_red();
+                boat_traffic_led_red();
+                
                 if ((current_time - bridge_top_enter_time) >= T_MAX_UP_HOLD) {
                     ESP_LOGI(TAG, "TOP watchdog elapsed — proceeding to pre-lower.");
-                    bridge_led_warning();
                     bridge_set_state(BRIDGE_PRE_LOWER_WARN);
                     break;
                 }
@@ -1393,20 +1460,17 @@ void bridge_task(void *pvParameters) {
                     if (boat_initial_sensor == 1) {
                         if (boat2_present) {
                             ESP_LOGI(TAG, "Boat sensed by sensor2 after gap — starting pre-lower delay.");
-                            bridge_led_warning();
                             bridge_set_state(BRIDGE_PRE_LOWER_WARN);
                         }
                     } else if (boat_initial_sensor == 2) {
                         if (boat1_present) {
                             ESP_LOGI(TAG, "Boat sensed by sensor1 after gap — starting pre-lower delay.");
-                            bridge_led_warning();
                             bridge_set_state(BRIDGE_PRE_LOWER_WARN);
                         }
                     } else {
                         // Fallback: if any sensor reports presence again, proceed
                         if (boat1_present || boat2_present) {
                             ESP_LOGI(TAG, "Boat sensed again — starting pre-lower delay.");
-                            bridge_led_warning();
                             bridge_set_state(BRIDGE_PRE_LOWER_WARN);
                         }
                     }
@@ -1415,14 +1479,29 @@ void bridge_task(void *pvParameters) {
             }
 
             case BRIDGE_PRE_LOWER_WARN:
+                // Car Traffic: Red, Boat Traffic: Red (blinking)
+                car_traffic_led_red();
+                // Blink boat traffic LED (500ms period)
+                if ((current_time - boat_led_blink_last_toggle) >= 500) {
+                    boat_led_blink_last_toggle = current_time;
+                    if (boat_led_r_state) {
+                        boat_traffic_led_off();
+                    } else {
+                        boat_traffic_led_red();
+                    }
+                }
+                
                 if ((current_time - bridge_state_start) >= T_LOWER_CAUT_YEL) {
-                    bridge_led_stop();
                     ESP_LOGI(TAG, "Lowering bridge.");
                     bridge_set_state(BRIDGE_LOWERING);
                 }
                 break;
 
             case BRIDGE_LOWERING:
+                // Car Traffic: Red, Boat Traffic: Red
+                car_traffic_led_red();
+                boat_traffic_led_red();
+                
                 if (bridge_switch_triggered(pins.bridge_sw_lowered_pin)) {
                     ESP_LOGI(TAG, "Bottom limit reached. Settling...");
                     bridge_set_state(BRIDGE_AFTER_LOWERED);
@@ -1436,16 +1515,22 @@ void bridge_task(void *pvParameters) {
                 break;
 
             case BRIDGE_AFTER_LOWERED:
+                // Car Traffic: Red, Boat Traffic: Red
+                car_traffic_led_red();
+                boat_traffic_led_red();
+                
                 if ((current_time - bridge_state_start) >= T_AFTER_LOWERED) {
-                    bridge_led_traffic_go();
                     ESP_LOGI(TAG, "Traffic GREEN. Returning to ARMED.");
                     bridge_set_state(BRIDGE_OPEN_TRAFFIC);
                 }
                 break;
 
             case BRIDGE_OPEN_TRAFFIC:
+                // Car Traffic: Green, Boat Traffic: Red
+                car_traffic_led_green();
+                boat_traffic_led_red();
+                
                 if (bridge_boat_present() || bridge_boat2_present()) {
-                    bridge_led_warning();
                     ESP_LOGI(TAG, "New boat present — cycling again.");
                     bridge_set_state(BRIDGE_WARN_TRAFFIC);
                 } else {
@@ -1881,10 +1966,14 @@ static esp_err_t bridge_status_handler(httpd_req_t *req) {
     // Add hall effect threshold
     cJSON_AddNumberToObject(root, "hall_threshold", hall_effect_threshold);
     
-    // Add LED states
-    cJSON_AddBoolToObject(root, "led_r", led_r_state);
-    cJSON_AddBoolToObject(root, "led_g", led_g_state);
-    cJSON_AddBoolToObject(root, "led_b", led_b_state);
+    // Add Car Traffic LED states
+    cJSON_AddBoolToObject(root, "car_led_r", car_led_r_state);
+    cJSON_AddBoolToObject(root, "car_led_g", car_led_g_state);
+    cJSON_AddBoolToObject(root, "car_led_b", car_led_b_state);
+    // Add Boat Traffic LED states
+    cJSON_AddBoolToObject(root, "boat_led_r", boat_led_r_state);
+    cJSON_AddBoolToObject(root, "boat_led_g", boat_led_g_state);
+    cJSON_AddBoolToObject(root, "boat_led_b", boat_led_b_state);
     // Car detection enabled flag
     cJSON_AddBoolToObject(root, "car_detection_enabled", car_detection_enabled);
     // Detection meter for UI
@@ -2471,9 +2560,12 @@ static esp_err_t pin_config_get_handler(httpd_req_t *req) {
     cJSON_AddNumberToObject(root, "bridge_boat2_echo_pin", pins.bridge_boat2_echo_pin);
     cJSON_AddNumberToObject(root, "bridge_sw_lowered_pin", pins.bridge_sw_lowered_pin);
     cJSON_AddNumberToObject(root, "bridge_sw_raised_pin", pins.bridge_sw_raised_pin);
-    cJSON_AddNumberToObject(root, "bridge_led_r_pin", pins.bridge_led_r_pin);
-    cJSON_AddNumberToObject(root, "bridge_led_g_pin", pins.bridge_led_g_pin);
-    cJSON_AddNumberToObject(root, "bridge_led_b_pin", pins.bridge_led_b_pin);
+    cJSON_AddNumberToObject(root, "car_traffic_led_r_pin", pins.car_traffic_led_r_pin);
+    cJSON_AddNumberToObject(root, "car_traffic_led_g_pin", pins.car_traffic_led_g_pin);
+    cJSON_AddNumberToObject(root, "car_traffic_led_b_pin", pins.car_traffic_led_b_pin);
+    cJSON_AddNumberToObject(root, "boat_traffic_led_r_pin", pins.boat_traffic_led_r_pin);
+    cJSON_AddNumberToObject(root, "boat_traffic_led_g_pin", pins.boat_traffic_led_g_pin);
+    cJSON_AddNumberToObject(root, "boat_traffic_led_b_pin", pins.boat_traffic_led_b_pin);
     
     char *json_response = cJSON_Print(root);
     httpd_resp_set_type(req, "application/json");
@@ -2545,14 +2637,23 @@ static esp_err_t pin_config_post_handler(httpd_req_t *req) {
     if ((pin_item = cJSON_GetObjectItem(json, "bridge_sw_raised_pin"))) {
         new_config.bridge_sw_raised_pin = pin_item->valueint;
     }
-    if ((pin_item = cJSON_GetObjectItem(json, "bridge_led_r_pin"))) {
-        new_config.bridge_led_r_pin = pin_item->valueint;
+    if ((pin_item = cJSON_GetObjectItem(json, "car_traffic_led_r_pin"))) {
+        new_config.car_traffic_led_r_pin = pin_item->valueint;
     }
-    if ((pin_item = cJSON_GetObjectItem(json, "bridge_led_g_pin"))) {
-        new_config.bridge_led_g_pin = pin_item->valueint;
+    if ((pin_item = cJSON_GetObjectItem(json, "car_traffic_led_g_pin"))) {
+        new_config.car_traffic_led_g_pin = pin_item->valueint;
     }
-    if ((pin_item = cJSON_GetObjectItem(json, "bridge_led_b_pin"))) {
-        new_config.bridge_led_b_pin = pin_item->valueint;
+    if ((pin_item = cJSON_GetObjectItem(json, "car_traffic_led_b_pin"))) {
+        new_config.car_traffic_led_b_pin = pin_item->valueint;
+    }
+    if ((pin_item = cJSON_GetObjectItem(json, "boat_traffic_led_r_pin"))) {
+        new_config.boat_traffic_led_r_pin = pin_item->valueint;
+    }
+    if ((pin_item = cJSON_GetObjectItem(json, "boat_traffic_led_g_pin"))) {
+        new_config.boat_traffic_led_g_pin = pin_item->valueint;
+    }
+    if ((pin_item = cJSON_GetObjectItem(json, "boat_traffic_led_b_pin"))) {
+        new_config.boat_traffic_led_b_pin = pin_item->valueint;
     }
     
     cJSON_Delete(json);
@@ -2717,14 +2818,21 @@ void app_main() {
         gpio_set_pull_mode(pins.bridge_sw_raised_pin, GPIO_PULLUP_ONLY);
     }
     
-    gpio_set_direction(pins.bridge_led_r_pin, GPIO_MODE_OUTPUT);
-    gpio_set_direction(pins.bridge_led_g_pin, GPIO_MODE_OUTPUT);
-    gpio_set_direction(pins.bridge_led_b_pin, GPIO_MODE_OUTPUT);
+    // Initialize Car Traffic LED pins
+    gpio_set_direction(pins.car_traffic_led_r_pin, GPIO_MODE_OUTPUT);
+    gpio_set_direction(pins.car_traffic_led_g_pin, GPIO_MODE_OUTPUT);
+    gpio_set_direction(pins.car_traffic_led_b_pin, GPIO_MODE_OUTPUT);
+    
+    // Initialize Boat Traffic LED pins
+    gpio_set_direction(pins.boat_traffic_led_r_pin, GPIO_MODE_OUTPUT);
+    gpio_set_direction(pins.boat_traffic_led_g_pin, GPIO_MODE_OUTPUT);
+    gpio_set_direction(pins.boat_traffic_led_b_pin, GPIO_MODE_OUTPUT);
     
     // Initialize ADC for hall effect sensors
     init_adc_for_hall_sensors();
     
-    bridge_led_off();
+    car_traffic_led_off();
+    boat_traffic_led_off();
 
     // Install GPIO ISR service
     gpio_install_isr_service(0);

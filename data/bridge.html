@@ -263,16 +263,12 @@
                 <div class="status-value" id="boat2DetectionDelta">Loading...</div>
             </div>
             <div class="status-card">
-                <h3>Red LED</h3>
-                <div class="status-value" id="redLED">Loading...</div>
+                <h3>Car Traffic LED</h3>
+                <div class="status-value" id="carTrafficLED">Loading...</div>
             </div>
             <div class="status-card">
-                <h3>Green LED</h3>
-                <div class="status-value" id="greenLED">Loading...</div>
-            </div>
-            <div class="status-card">
-                <h3>Blue LED</h3>
-                <div class="status-value" id="blueLED">Loading...</div>
+                <h3>Boat Traffic LED</h3>
+                <div class="status-value" id="boatTrafficLED">Loading...</div>
             </div>
         </div>
 
@@ -842,10 +838,43 @@
                         document.getElementById('boat2DetectionDelta').textContent = 'N/A';
                     }
                     
-                    // Update LED states
-                    document.getElementById('redLED').textContent = data.led_r ? 'ON' : 'OFF';
-                    document.getElementById('greenLED').textContent = data.led_g ? 'ON' : 'OFF';
-                    document.getElementById('blueLED').textContent = data.led_b ? 'ON' : 'OFF';
+                    // Update Car Traffic LED state
+                    let carLedState = 'OFF';
+                    let carLedColor = '#000';
+                    if (data.car_led_r && data.car_led_g) {
+                        carLedState = 'YELLOW';
+                        carLedColor = '#ffd700';
+                    } else if (data.car_led_r) {
+                        carLedState = 'RED';
+                        carLedColor = '#ff0000';
+                    } else if (data.car_led_g) {
+                        carLedState = 'GREEN';
+                        carLedColor = '#00ff00';
+                    }
+                    document.getElementById('carTrafficLED').textContent = carLedState;
+                    document.getElementById('carTrafficLED').style.color = carLedColor;
+                    
+                    // Update Boat Traffic LED state
+                    let boatLedState = 'OFF';
+                    let boatLedColor = '#000';
+                    if (data.boat_led_r && data.boat_led_g) {
+                        boatLedState = 'YELLOW';
+                        boatLedColor = '#ffd700';
+                    } else if (data.boat_led_r) {
+                        // Check if in PRE_LOWER_WARN state for blinking indicator
+                        if (data.state === 'PRE_LOWER_WARN') {
+                            boatLedState = 'RED (BLINKING)';
+                            boatLedColor = '#ff0000';
+                        } else {
+                            boatLedState = 'RED';
+                            boatLedColor = '#ff0000';
+                        }
+                    } else if (data.boat_led_g) {
+                        boatLedState = 'GREEN';
+                        boatLedColor = '#00ff00';
+                    }
+                    document.getElementById('boatTrafficLED').textContent = boatLedState;
+                    document.getElementById('boatTrafficLED').style.color = boatLedColor;
                     // Update boat 2 detection buttons
                     if (typeof data.boat2_detection_enabled !== 'undefined') {
                         document.getElementById('enableBoat2Detect').disabled = data.boat2_detection_enabled;
