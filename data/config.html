@@ -315,72 +315,28 @@
                         <select class="pin-select" name="bridge_sw_raised_pin" id="bridge_sw_raised_pin">
                         </select>
                     </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Status LED Red:</label>
+                        <select class="pin-select" name="bridge_led_r_pin" id="bridge_led_r_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Status LED Green:</label>
+                        <select class="pin-select" name="bridge_led_g_pin" id="bridge_led_g_pin">
+                        </select>
+                    </div>
+                    <div class="pin-item">
+                        <label class="pin-label">Status LED Blue:</label>
+                        <select class="pin-select" name="bridge_led_b_pin" id="bridge_led_b_pin">
+                        </select>
+                    </div>
                 </div>
                 <div class="pin-info">
                     <strong>Bridge Control Info:</strong>
                     <ul>
                         <li><strong>Boat Sensors:</strong> HC-SR04 ultrasonic sensors for presence detection</li>
                         <li><strong>Limit Switches:</strong> Mechanical switches for bridge position detection</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- Traffic LED Pins -->
-            <div class="pin-section">
-                <h2>🚗 Car Traffic LED Pins</h2>
-                <div class="pin-grid">
-                    <div class="pin-item">
-                        <label class="pin-label">Traffic LED Red:</label>
-                        <select class="pin-select" name="traffic_led_r_pin" id="traffic_led_r_pin"></select>
-                    </div>
-                    <div class="pin-item">
-                        <label class="pin-label">Traffic LED Yellow:</label>
-                        <select class="pin-select" name="traffic_led_y_pin" id="traffic_led_y_pin"></select>
-                    </div>
-                    <div class="pin-item">
-                        <label class="pin-label">Traffic LED Green:</label>
-                        <select class="pin-select" name="traffic_led_g_pin" id="traffic_led_g_pin"></select>
-                    </div>
-                    <div class="pin-item">
-                        <label class="pin-label">Traffic LED Blue (optional):</label>
-                        <select class="pin-select" name="traffic_led_b_pin" id="traffic_led_b_pin"></select>
-                    </div>
-                </div>
-                <div class="pin-info">
-                    <strong>Traffic LED Info:</strong>
-                    <ul>
-                        <li>Yellow is used for pre-warning and blinking states</li>
-                        <li>Blue is optional (can be left unassigned)</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- Boat LED Pins -->
-            <div class="pin-section">
-                <h2>🛥️ Boat Traffic LED Pins</h2>
-                <div class="pin-grid">
-                    <div class="pin-item">
-                        <label class="pin-label">Boat LED Red:</label>
-                        <select class="pin-select" name="boat_led_r_pin" id="boat_led_r_pin"></select>
-                    </div>
-                    <div class="pin-item">
-                        <label class="pin-label">Boat LED Yellow:</label>
-                        <select class="pin-select" name="boat_led_y_pin" id="boat_led_y_pin"></select>
-                    </div>
-                    <div class="pin-item">
-                        <label class="pin-label">Boat LED Green:</label>
-                        <select class="pin-select" name="boat_led_g_pin" id="boat_led_g_pin"></select>
-                    </div>
-                    <div class="pin-item">
-                        <label class="pin-label">Boat LED Blue (optional):</label>
-                        <select class="pin-select" name="boat_led_b_pin" id="boat_led_b_pin"></select>
-                    </div>
-                </div>
-                <div class="pin-info">
-                    <strong>Boat LED Info:</strong>
-                    <ul>
-                        <li>Boat LEDs blink yellow during raising and pre-lower warning</li>
-                        <li>Blue is optional (can be left unassigned)</li>
+                        <li><strong>RGB LED:</strong> Bridge status indication (red, green, blue channels)</li>
                     </ul>
                 </div>
             </div>

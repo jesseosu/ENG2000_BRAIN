@@ -5,5 +5,6 @@
         "adc_cali.h": "c",
         "ledc.h": "c"
     },
-    "idf.port": "/dev/tty.usbserial-10"
+    "idf.port": "/dev/tty.usbserial-10",
+    "idf.pythonInstallPath": "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"
 }
